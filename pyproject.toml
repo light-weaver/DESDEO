@@ -20,7 +20,7 @@ pyarrow = "^17.0.0"
 numba = "^0.60.0"
 # Visualization
 seaborn = "^0.13.0"
-plotly = "^5.18"
+plotly = "^6"
 # Data handling/parsing
 pydantic = "^2.9"
 sympy = "^1.0"

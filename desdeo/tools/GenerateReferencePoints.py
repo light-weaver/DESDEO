@@ -34,11 +34,18 @@ def householder(vector):
     return rot_mat
 
 
-def rotate(initial_vector, rotated_vector, other_vectors):
-    """Calculate the rotation matrix that rotates the initial_vector to the
-    rotated_vector. Apply that rotation on other_vectors and return.
-    Uses Householder reflections twice to achieve this."""
+def get_rotation_matrix(initial_vector: np.ndarray, rotated_vector: np.ndarray) -> np.ndarray:
+    """Calculate the rotation matrix that rotates the initial_vector to the rotated_vector.
 
+    Uses Householder reflections twice to achieve this.
+
+    Args:
+        initial_vector (np.ndarray): The initial position of the vector.
+        rotated_vector (np.ndarray): The position of the vector after rotation.
+
+    Returns:
+        np.ndarray: The rotation matrix. Can be used to rotate other vectors in the same way.
+    """
     init_vec_norm = normalize(initial_vector)
     rot_vec_norm = normalize(np.asarray(rotated_vector))
     middle_vec_norm = normalize(init_vec_norm + rot_vec_norm)
@@ -46,7 +53,16 @@ def rotate(initial_vector, rotated_vector, other_vectors):
     second_reflector = middle_vec_norm - rot_vec_norm
     Q1 = householder(first_reflector)
     Q2 = householder(second_reflector)
-    reflection_matrix = np.matmul(Q2, Q1)
+    rotation_matrix = np.matmul(Q2, Q1)
+    return rotation_matrix
+
+
+def rotate(initial_vector, rotated_vector, other_vectors):
+    """Calculate the rotation matrix that rotates the initial_vector to the
+    rotated_vector. Apply that rotation on other_vectors and return.
+    Uses Householder reflections twice to achieve this."""
+
+    reflection_matrix = get_rotation_matrix(initial_vector, rotated_vector)
     rotated_vectors = np.matmul(other_vectors, np.transpose(reflection_matrix))
     return rotated_vectors
 
