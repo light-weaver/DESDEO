@@ -30,6 +30,7 @@ class _EvaluatedPoint(BaseModel):
 def choose_reference_point(
     refp_array: np.ndarray,
     evaluated_points: list[_EvaluatedPoint] | None = None,
+    thickness: float = 0.02,
 ):
     """Choose the next reference point to evaluate using the Iterative Pareto Representer algorithm.
 
@@ -37,10 +38,11 @@ def choose_reference_point(
         refp_array (np.ndarray): The reference points to choose from.
         evaluated_points (list[_EvaluatedPoint]): Already evaluated reference points and their targets.
             If None, a random reference point is chosen.
+        thickness (float): A thickness parameter used to jitter the bounding box of pruned reference points.
     """
     if evaluated_points is None or len(evaluated_points) == 0:
         return refp_array[np.random.choice(refp_array.shape[0])], None
-    bad_points_mask = _find_bad_RPs(refp_array, evaluated_points)
+    bad_points_mask = _find_bad_RPs(refp_array, evaluated_points, thickness)
     available_points_mask = ~bad_points_mask
     solution_projections = _project(np.array([list(eval_result.targets.values()) for eval_result in evaluated_points]))
     return _DSS_with_pruning(

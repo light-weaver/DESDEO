@@ -21,6 +21,7 @@ numba = "^0.60.0"
 # Visualization
 seaborn = "^0.13.0"
 plotly = "^6"
+marimo = "^0.11.0"
 # Data handling/parsing
 pydantic = "^2.9"
 sympy = "^1.0"
@@ -35,7 +36,7 @@ jupyterlab = "^4.0"
 # API packages
 asyncpg = { version = "^0.29.0", optional = true }
 gunicorn = { version = "^23.0.0", optional = true }
-fastapi = { version = "^0.106.0", optional = true }
+fastapi = { version = "^0.115", optional = true }
 uvicorn = { extras = ["standard"], version = "^0.25.0", optional = true }
 sqlalchemy = { version = "^2.0.23", optional = true }
 passlib = { version = "^1.7.4", optional = true }
@@ -51,11 +52,12 @@ scienceplots = "^2.1.1"
 tsp-solver = "^0.1"
 greenlet = "^3.1.1"
 pymoo = "^0.6.1.3"
+kaleido = "0.2.1"
 
 [tool.poetry.extras]
 standard = ["polars"]
 legacy = ["polars-lts-cpu"]
-viz = ["seaborn", "plotly", "scienceplots"] # We could make viz packages optional in the future.
+viz = ["seaborn", "plotly", "scienceplots", "marimo"] # We could make viz packages optional in the future.
 api = [
     "asyncpg",
     "fastapi",
@@ -90,6 +92,7 @@ pytest-asyncio = "^0.24.0"
 griffe = "^1.4.1"
 mkdocs-jupyter = "^0.25.1"
 jupytext = "^1.16.4"
+
 
 
 [tool.ruff]
