@@ -1,3 +1,6 @@
+from typing import Callable
+from scipy._lib.decorator import __init__
+
 """The base class for selection operators.
 
 This whole file should be rewritten. Everything is a mess. Moreover, the selectors do not yet take seeds as input for reproducibility.
@@ -27,7 +30,7 @@ from desdeo.tools.message import (
     TerminatorMessageTopics,
 )
 from desdeo.tools.non_dominated_sorting import fast_non_dominated_sort
-from desdeo.tools.patterns import Subscriber, Publisher
+from desdeo.tools.patterns import Publisher, Subscriber
 
 SolutionType = TypeVar("SolutionType", list, pl.DataFrame)
 
@@ -1046,3 +1049,56 @@ class NSGAIII_select(BaseDecompositionSelector):
 
     def update(self, message: Message) -> None:
         pass
+
+
+class IBEA_Selector(BaseSelector):
+    @property
+    def provided_topics(self):
+        return {
+            0: [],
+            1: [SelectorMessageTopics.STATE],
+            2: [SelectorMessageTopics.SELECTED_VERBOSE_OUTPUTS, SelectorMessageTopics.SELECTED_FITNESS],
+        }
+
+    @property
+    def interested_topics(self):
+        return []
+
+    def __init__(
+        self,
+        problem: Problem,
+        verbosity: int,
+        publisher: Publisher,
+        binary_indicator: Callable[[np.ndarray, np.ndarray], float] | None = None,
+    ):
+        super().__init__(problem=problem, verbosity=verbosity, publisher=publisher)
+        self.selection: list[int] | None = None
+        self.selected_individuals: SolutionType | None = None
+        self.selected_targets: pl.DataFrame | None = None
+        
+
+    def do(
+        self, parents: tuple[SolutionType, pl.DataFrame], offsprings: tuple[SolutionType, pl.DataFrame]
+    ) -> tuple[SolutionType, pl.DataFrame]:
+        """Perform the selection operation.
+
+        Args:
+            parents (tuple[SolutionType, pl.DataFrame]): the decision variables as the first element.
+                The second element is the objective values, targets, and constraint violations.
+            offsprings (tuple[SolutionType, pl.DataFrame]): the decision variables as the first element.
+                The second element is the objective values, targets, and constraint violations.
+
+        Returns:
+            tuple[SolutionType, pl.DataFrame]: The selected decision variables and their objective values,
+                targets, and constraint violations.
+        """
+        if isinstance(parents[0], pl.DataFrame) and isinstance(offsprings[0], pl.DataFrame):
+            solutions = parents[0].vstack(offsprings[0])
+        elif isinstance(parents[0], list) and isinstance(offsprings[0], list):
+            solutions = parents[0] + offsprings[0]
+        else:
+            raise TypeError("The decision variables must be either a list or a polars DataFrame, not both")
+        alltargets = parents[1].vstack(offsprings[1])
+        targets = alltargets[self.target_symbols].to_numpy()
+        if self.constraints_symbols is not None:
+            raise NotImplementedError("IBEA selector does not support constraints. Please use a different selector.")

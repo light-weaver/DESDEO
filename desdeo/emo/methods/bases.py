@@ -5,7 +5,6 @@ This can be used as a template for the implementation of the EMO methods.
 
 from collections.abc import Callable
 
-import numpy as np
 import polars as pl
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -63,5 +62,57 @@ def template1(
         offspring = repair(offspring)
         offspring_outputs = evaluator.evaluate(offspring)
         solutions, outputs = selection.do(parents=(solutions, outputs), offsprings=(offspring, offspring_outputs))
+
+    return EMOResult(solutions=solutions, outputs=outputs)
+
+
+def template2(
+    evaluator: EMOEvaluator,
+    crossover: BaseCrossover,
+    mutation: BaseMutation,
+    generator: BaseGenerator,
+    selection: BaseSelector,
+    mate_selection: BaseMateSelector,
+    terminator: BaseTerminator,
+    repair: Callable[[pl.DataFrame], pl.DataFrame] = lambda x: x,  # Default to identity function if no repair is needed
+) -> EMOResult:
+    """Implements a template that many EMO methods, such as IBEA, follow.
+
+    Args:
+        evaluator (EMOEvaluator): A class that evaluates the solutions and provides the objective vectors, constraint
+            vectors, and targets.
+        crossover (BaseCrossover): The crossover operator.
+        mutation (BaseMutation): The mutation operator.
+        generator (BaseGenerator): A class that generates the initial population.
+        selection (BaseSelector): The selection operator.
+        terminator (BaseTerminator): The termination operator.
+        repair (Callable, optional): A function that repairs the offspring if they go out of bounds. Defaults to an
+            identity function, meaning no repair is done. See :py:func:`desdeo.tools.utils.repair` as an example of a
+            repair function.
+
+    Returns:
+        EMOResult: The final population and their objective vectors, constraint vectors, and targets
+    """
+    solutions, outputs = generator.do()
+    # This is just a hack to make all selection operators work (they require offsprings to be passed separately rn)
+    offspring = pl.DataFrame(
+            schema=solutions.schema,
+        )
+    offspring_outputs = pl.DataFrame(
+        schema=outputs.schema,
+    )
+
+    while True:
+        solutions, outputs = selection.do(parents=(solutions, outputs), offsprings=(offspring, offspring_outputs))
+        if terminator.check():
+            # Weird way to do looping, but IBEA does environmental selection before the loop check, and...
+            # does mating afterwards.
+            break
+        parents, _ = mate_selection.do((solutions, outputs))
+        offspring = crossover.do(population=parents)
+        offspring = mutation.do(offspring, solutions)
+        # Repair offspring if they go out of bounds
+        offspring = repair(offspring)
+        offspring_outputs = evaluator.evaluate(offspring)
 
     return EMOResult(solutions=solutions, outputs=outputs)

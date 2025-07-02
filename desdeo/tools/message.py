@@ -1,3 +1,5 @@
+from PIL._typing import NumpyArray
+
 """Defines the messaging protocol used by the various EMO operators."""
 
 from enum import Enum
@@ -102,6 +104,8 @@ class SelectorMessageTopics(Enum):
     """ The individuals selected by the selector. """
     SELECTED_OUTPUTS = "SELECTED_OUTPUTS"
     """ The targets of the selected individuals. """
+    SELECTED_FITNESS = "SELECTED_FITNESS"
+    """ The fitness of the selected individuals. This is the fitness calculated by the selector, not the objectives."""
     SELECTED_VERBOSE_OUTPUTS = "SELECTED_VERBOSE_OUTPUTS"
     """ Same as SELECTED_OUTPUTS + SELECTED_INDIVIDUALS"""
     REFERENCE_VECTORS = "REFERENCE_VECTORS"
@@ -202,6 +206,19 @@ class PolarsDataFrameMessage(BaseMessage):
         return value.to_dict(as_series=False)
 
 
+class NumpyArrayMessage(BaseMessage):
+    """A message containing a numpy array value."""
+
+    value: NumpyArray = Field(..., description="The numpy array value of the message.")
+    """ The numpy array value of the message. """
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    @field_serializer("value")
+    def _serialize_value(self, value: NumpyArray) -> list[list[float]]:
+        return value.tolist()
+
+
 class GenericMessage(BaseMessage):
     """A message containing a generic value."""
 
@@ -218,6 +235,7 @@ Message = (
     | StringMessage
     | BoolMessage
     | PolarsDataFrameMessage
+    | NumpyArrayMessage
 )
 
 AllowedMessagesAtVerbosity: dict[int, tuple[type[Message], ...]] = {
@@ -232,5 +250,6 @@ AllowedMessagesAtVerbosity: dict[int, tuple[type[Message], ...]] = {
         Array2DMessage,
         GenericMessage,
         PolarsDataFrameMessage,
+        NumpyArrayMessage,
     ),
 }
