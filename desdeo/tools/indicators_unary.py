@@ -360,3 +360,7 @@ def get_pareto_front(solutions):
 # The function signature should be similar the already implemented functions, if reasonable.
 # Optionally, a batch version of the indicator can be added as well.
 # The methods should make similar assumptions about the input data as the already implemented functions.
+
+
+def D_PHI(some_inputs):
+    return output
