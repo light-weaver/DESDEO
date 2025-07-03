@@ -1,10 +1,9 @@
-from PIL._typing import NumpyArray
-
 """Defines the messaging protocol used by the various EMO operators."""
 
 from enum import Enum
 from typing import Any, Literal
 
+import numpy as np
 from polars import DataFrame
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
@@ -209,13 +208,13 @@ class PolarsDataFrameMessage(BaseMessage):
 class NumpyArrayMessage(BaseMessage):
     """A message containing a numpy array value."""
 
-    value: NumpyArray = Field(..., description="The numpy array value of the message.")
+    value: np.ndarray = Field(..., description="The numpy array value of the message.")
     """ The numpy array value of the message. """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     @field_serializer("value")
-    def _serialize_value(self, value: NumpyArray) -> list[list[float]]:
+    def _serialize_value(self, value: np.ndarray) -> list[list[float]]:
         return value.tolist()
 
 

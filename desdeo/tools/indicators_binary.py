@@ -13,8 +13,8 @@ For now, we rely on pymoo for the implementation of many of the indicators.
 from typing import Literal
 
 import numpy as np
-from numba import njit
 from moocore import epsilon_additive, epsilon_mult
+from numba import njit
 
 """
 Note that the moocore package includes a more complex implementation for calculating the epsilon_indicator for two
@@ -41,6 +41,26 @@ def epsilon_component(solution1: np.ndarray, solution2: np.ndarray) -> float:
     return eps
 
 
+@njit()
+def self_epsilon(solution_set: np.ndarray) -> np.ndarray:
+    """Computes the pairwise additive epsilon-indicator for a solution set.
+
+    Args:
+        solution_set (np.ndarray): Should be a two-dimensional array, where each row is a
+            solution normalized between [0, 1].
+
+    Returns:
+        np.ndarray: A two-dimensional array where the entry at (i, j) is the
+            additive epsilon-indicator between the i-th and j-th solution in the set.
+    """
+    n_solutions = solution_set.shape[0]
+    eps_matrix = np.zeros((n_solutions, n_solutions), dtype=np.float64)
+    for i in range(n_solutions):
+        for j in range(n_solutions):
+            eps_matrix[i, j] = epsilon_component(solution_set[i], solution_set[j])
+    return eps_matrix
+
+
 def epsilon_indicator(
     set1: np.ndarray, set2: np.ndarray, kind: Literal["additive", "multiplicative"] = "additive"
 ) -> float:
@@ -49,6 +69,7 @@ def epsilon_indicator(
     Args:
         set1 (np.ndarray): Should be a two-dimensional array, where each row is a solution normalized between [0, 1]
         set2 (np.ndarray): Should be a two-dimensional array, where each row is a solution normalized between [0, 1]
+        kind (Literal["additive", "multiplicative"]): The kind of epsilon-indicator to compute. Defaults to "additive".
 
     Returns:
         float: the  epsilon-indicator between the two sets.

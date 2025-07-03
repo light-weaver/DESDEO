@@ -1,4 +1,5 @@
 from typing import Callable
+
 from scipy._lib.decorator import __init__
 
 """The base class for selection operators.
@@ -16,6 +17,7 @@ from typing import Literal, TypedDict, TypeVar
 
 import numpy as np
 import polars as pl
+from numba import njit
 from scipy.special import comb
 from scipy.stats.qmc import LatinHypercube
 
@@ -25,6 +27,7 @@ from desdeo.tools.message import (
     Array2DMessage,
     DictMessage,
     Message,
+    NumpyArrayMessage,
     PolarsDataFrameMessage,
     SelectorMessageTopics,
     TerminatorMessageTopics,
@@ -1051,7 +1054,70 @@ class NSGAIII_select(BaseDecompositionSelector):
         pass
 
 
+@njit
+def __ibea_fitness(fitness_components: np.ndarray, kappa: float) -> np.ndarray:
+    """Calculates the IBEA fitness for each individual based on pairwise fitness components.
+
+    Args:
+        fitness_components (np.ndarray): The pairwise fitness components of the individuals.
+        kappa (float): The kappa value for the IBEA selection.
+
+    Returns:
+        np.ndarray: The IBEA fitness values for each individual.
+    """
+    num_individuals = fitness_components.shape[0]
+    fitness = np.zeros(num_individuals)
+    for i in range(num_individuals):
+        for j in range(num_individuals):
+            if i != j:
+                fitness[i] -= np.exp(-fitness_components[j, i] / kappa)
+    return fitness
+
+
+@njit
+def __ibea_select(fitness_components: np.ndarray, chosen: list[int], kappa: float) -> int:
+    """Selects the best individual based on the IBEA indicator.
+
+    Args:
+        fitness_components (np.ndarray): The pairwise fitness components of the individuals.
+        chosen (list[int]): The list of indices of the individuals that have been selected so far.
+        kappa (float): The kappa value for the IBEA selection.
+
+    Returns:
+        int: The index of the selected individual.
+    """
+    fitness = np.zeros(len(fitness_components))
+    for i in range(len(fitness_components)):
+        if i in chosen:
+            continue
+        for j in range(len(fitness_components)):
+            if j in chosen or i == j:
+                continue
+            fitness[i] -= np.exp(-fitness_components[j, i] / kappa)
+    return np.argmin(fitness)
+
+
+@njit
+def __ibea_select_all(fitness_components: np.ndarray, kappa: float) -> list[int]:
+    """Selects all individuals based on the IBEA indicator.
+
+    Args:
+        fitness_components (np.ndarray): The pairwise fitness components of the individuals.
+        kappa (float): The kappa value for the IBEA selection.
+
+    Returns:
+        list[int]: The list of indices of the selected individuals.
+    """
+    chosen = []
+    while len(chosen) < fitness_components.shape[0]:
+        selected = __ibea_select(fitness_components, chosen, kappa)
+        chosen.append(selected)
+    return chosen
+
+
 class IBEA_Selector(BaseSelector):
+    """The IBEA selection operator."""
+
     @property
     def provided_topics(self):
         return {
@@ -1069,13 +1135,25 @@ class IBEA_Selector(BaseSelector):
         problem: Problem,
         verbosity: int,
         publisher: Publisher,
-        binary_indicator: Callable[[np.ndarray, np.ndarray], float] | None = None,
+        population_size: int,
+        binary_indicator: Callable[[np.ndarray], np.ndarray],
     ):
+        """Initialize the IBEA selector.
+
+        Args:
+            problem (Problem): The problem to be solved.
+            verbosity (int): The verbosity level of the selector.
+            publisher (Publisher): The publisher to send messages to.
+            population_size (int): The size of the population to be selected.
+            binary_indicator (Callable[[np.ndarray], np.ndarray]): A binary indicator function that takes the
+                target values and returns a binary indicator for each individual.
+        """
         super().__init__(problem=problem, verbosity=verbosity, publisher=publisher)
         self.selection: list[int] | None = None
         self.selected_individuals: SolutionType | None = None
         self.selected_targets: pl.DataFrame | None = None
-        
+        self.binary_indicator = binary_indicator
+        self.population_size = population_size
 
     def do(
         self, parents: tuple[SolutionType, pl.DataFrame], offsprings: tuple[SolutionType, pl.DataFrame]
@@ -1102,3 +1180,59 @@ class IBEA_Selector(BaseSelector):
         targets = alltargets[self.target_symbols].to_numpy()
         if self.constraints_symbols is not None:
             raise NotImplementedError("IBEA selector does not support constraints. Please use a different selector.")
+        fitness_components = self.binary_indicator(alltargets[self.target_symbols].to_numpy())
+        if len(parents[0]) < self.population_size:
+            return parents[0], parents[1]
+        chosen = __ibea_select_all(fitness_components, kappa=1.0)
+        self.selected_individuals = solutions[chosen]
+        self.selected_targets = alltargets[chosen]
+        self.selection = chosen
+        self.fitness = __ibea_fitness(self.selected_targets[self.target_symbols].to_numpy(), kappa=1.0)
+        self.notify()
+        return self.selected_individuals, self.selected_targets
+
+    def state(self) -> Sequence[Message]:
+        """Return the state of the selector."""
+        if self.verbosity == 0 or self.selection is None or self.selected_targets is None:
+            return []
+        if self.verbosity == 1:
+            return [
+                DictMessage(
+                    topic=SelectorMessageTopics.STATE,
+                    value={
+                        "population_size": self.population_size,
+                        "selected_individuals": self.selection,
+                    },
+                    source=self.__class__.__name__,
+                )
+            ]
+        # verbosity == 2
+        if isinstance(self.selected_individuals, pl.DataFrame):
+            message = PolarsDataFrameMessage(
+                topic=SelectorMessageTopics.SELECTED_VERBOSE_OUTPUTS,
+                value=pl.concat([self.selected_individuals, self.selected_targets], how="horizontal"),
+                source=self.__class__.__name__,
+            )
+        else:
+            warnings.warn("Population is not a Polars DataFrame. Defaulting to providing OUTPUTS only.", stacklevel=2)
+            message = PolarsDataFrameMessage(
+                topic=SelectorMessageTopics.SELECTED_VERBOSE_OUTPUTS,
+                value=self.selected_targets,
+                source=self.__class__.__name__,
+            )
+        return [
+            DictMessage(
+                topic=SelectorMessageTopics.STATE,
+                value={
+                    "population_size": self.population_size,
+                    "selected_individuals": self.selection,
+                },
+                source=self.__class__.__name__,
+            ),
+            message,
+            NumpyArrayMessage(
+                topic=SelectorMessageTopics.SELECTED_FITNESS,
+                value=self.fitness,
+                source=self.__class__.__name__,
+            ),
+        ]
