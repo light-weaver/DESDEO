@@ -1,0 +1,204 @@
+{
+    "name": "Metallurgical Application",
+    "description": "A problem from the metallurgical domain.",
+    "constants": null,
+    "variables": [
+        {
+            "name": "C",
+            "symbol": "C",
+            "variable_type": "real",
+            "lowerbound": 0.006,
+            "upperbound": 0.4,
+            "initial_value": null
+        },
+        {
+            "name": "Si",
+            "symbol": "Si",
+            "variable_type": "real",
+            "lowerbound": 0.0,
+            "upperbound": 0.6,
+            "initial_value": null
+        },
+        {
+            "name": "Mn",
+            "symbol": "Mn",
+            "variable_type": "real",
+            "lowerbound": 0.28,
+            "upperbound": 1.75,
+            "initial_value": null
+        },
+        {
+            "name": "P",
+            "symbol": "P",
+            "variable_type": "real",
+            "lowerbound": 0.0,
+            "upperbound": 0.035,
+            "initial_value": null
+        },
+        {
+            "name": "S",
+            "symbol": "S",
+            "variable_type": "real",
+            "lowerbound": 0.0,
+            "upperbound": 0.042,
+            "initial_value": null
+        },
+        {
+            "name": "Mo",
+            "symbol": "Mo",
+            "variable_type": "real",
+            "lowerbound": 0.0,
+            "upperbound": 1.0,
+            "initial_value": null
+        },
+        {
+            "name": "Ni",
+            "symbol": "Ni",
+            "variable_type": "real",
+            "lowerbound": 0.0,
+            "upperbound": 3.6,
+            "initial_value": null
+        },
+        {
+            "name": "Al",
+            "symbol": "Al",
+            "variable_type": "real",
+            "lowerbound": 0.0,
+            "upperbound": 0.19,
+            "initial_value": null
+        },
+        {
+            "name": "N",
+            "symbol": "N",
+            "variable_type": "real",
+            "lowerbound": 0.0,
+            "upperbound": 0.024,
+            "initial_value": null
+        },
+        {
+            "name": "Nb",
+            "symbol": "Nb",
+            "variable_type": "real",
+            "lowerbound": 0.0,
+            "upperbound": 0.45,
+            "initial_value": null
+        },
+        {
+            "name": "V",
+            "symbol": "V",
+            "variable_type": "real",
+            "lowerbound": 0.0,
+            "upperbound": 0.2,
+            "initial_value": null
+        },
+        {
+            "name": "B",
+            "symbol": "B",
+            "variable_type": "real",
+            "lowerbound": 0.0,
+            "upperbound": 0.002,
+            "initial_value": null
+        },
+        {
+            "name": "Ti",
+            "symbol": "Ti",
+            "variable_type": "real",
+            "lowerbound": 0.0,
+            "upperbound": 0.31,
+            "initial_value": null
+        },
+        {
+            "name": "Cr",
+            "symbol": "Cr",
+            "variable_type": "real",
+            "lowerbound": 0.0,
+            "upperbound": 1.5,
+            "initial_value": null
+        },
+        {
+            "name": "Ce",
+            "symbol": "Ce",
+            "variable_type": "real",
+            "lowerbound": 0.0,
+            "upperbound": 0.015,
+            "initial_value": null
+        },
+        {
+            "name": "Cu",
+            "symbol": "Cu",
+            "variable_type": "real",
+            "lowerbound": 0.0,
+            "upperbound": 1.8,
+            "initial_value": null
+        },
+        {
+            "name": "Zr",
+            "symbol": "Zr",
+            "variable_type": "real",
+            "lowerbound": 0.0,
+            "upperbound": 0.008,
+            "initial_value": null
+        }
+    ],
+    "objectives": [
+        {
+            "name": "YS",
+            "symbol": "YS",
+            "unit": null,
+            "func": null,
+            "simulator_path": null,
+            "surrogates": [
+                "/home/rishi/projects/DESDEO/surrogatemodels/YS.joblib"
+            ],
+            "maximize": true,
+            "ideal": null,
+            "nadir": null,
+            "objective_type": "surrogate",
+            "is_linear": false,
+            "is_convex": false,
+            "is_twice_differentiable": false,
+            "scenario_keys": null
+        },
+        {
+            "name": "UTS",
+            "symbol": "UTS",
+            "unit": null,
+            "func": null,
+            "simulator_path": null,
+            "surrogates": [
+                "/home/rishi/projects/DESDEO/surrogatemodels/UTS.joblib"
+            ],
+            "maximize": true,
+            "ideal": null,
+            "nadir": null,
+            "objective_type": "surrogate",
+            "is_linear": false,
+            "is_convex": false,
+            "is_twice_differentiable": false,
+            "scenario_keys": null
+        },
+        {
+            "name": "ELON",
+            "symbol": "ELON",
+            "unit": null,
+            "func": null,
+            "simulator_path": null,
+            "surrogates": [
+                "/home/rishi/projects/DESDEO/surrogatemodels/ELON.joblib"
+            ],
+            "maximize": true,
+            "ideal": null,
+            "nadir": null,
+            "objective_type": "surrogate",
+            "is_linear": false,
+            "is_convex": false,
+            "is_twice_differentiable": false,
+            "scenario_keys": null
+        }
+    ],
+    "extra_funcs": [],
+    "scalarization_funcs": null,
+    "discrete_representation": null,
+    "scenario_keys": null,
+    "simulators": null
+}

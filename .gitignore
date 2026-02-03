@@ -145,7 +145,6 @@ test.db
 .DS_Store
 .vscode
 
-experiment/
 
 # testmondata
 .testmondata*
