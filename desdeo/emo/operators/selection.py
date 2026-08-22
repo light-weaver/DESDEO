@@ -1568,6 +1568,12 @@ def _nsga2_crowding_distance_assignment(
     crowding_distances = np.zeros(num_vectors)  # I[i]_distance
 
     for m in range(num_objectives):
+        # An objective that is constant across the whole population separates nothing. Sorting by it
+        # gives an arbitrary order, so marking its two ends as boundary points would hand an infinite
+        # distance to two arbitrary solutions, and the normalisation below would divide by zero.
+        if f_maxs[m] == f_mins[m]:
+            continue
+
         # sort by column (objective)
         m_order = vectors[:, m].argsort()
         # inlcude boundary points

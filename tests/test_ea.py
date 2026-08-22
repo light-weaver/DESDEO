@@ -2384,3 +2384,23 @@ def test_s_energy_gives_every_selector_the_same_population_size(n_objectives):
         sizes[name] = len(solver().optimal_outputs)
 
     assert set(sizes.values()) == {n_vectors}, f"population sizes diverged: {sizes}"
+
+
+@pytest.mark.ea
+def test_nsga2_crowding_distance_skips_a_constant_objective():
+    """A constant objective must not be treated as if it ordered the front.
+
+    Its argsort is arbitrary, so using it would hand an infinite crowding distance to two arbitrary
+    solutions, and normalising by its zero range divides by zero. This is reachable on any problem
+    whose objectives can collapse, and constrained runs reach it readily because they converge on a
+    much smaller feasible region.
+    """
+    front = np.array([[0.0, 1.0, 7.0], [1.0, 0.5, 7.0], [2.0, 0.0, 7.0]])
+    f_mins, f_maxs = front.min(axis=0), front.max(axis=0)
+
+    distances = _nsga2_crowding_distance_assignment(front, f_mins, f_maxs)
+
+    # The two extremes of the objectives that do vary, and only those.
+    assert distances[0] == np.inf
+    assert distances[-1] == np.inf
+    assert np.isfinite(distances[1])
