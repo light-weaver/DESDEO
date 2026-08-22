@@ -56,7 +56,7 @@ from desdeo.emo.operators.termination import (
     MaxEvaluationsTerminator,
     MaxGenerationsTerminator,
 )
-from desdeo.emo.options.algorithms import ibea_options, nsga2_options, nsga3_options
+from desdeo.emo.options.algorithms import ibea_options, nsga2_options, nsga3_options, rvea_options
 from desdeo.emo.options.crossover import SimulatedBinaryCrossoverOptions
 from desdeo.emo.options.templates import emo_constructor
 from desdeo.emo.options.termination import MaxEvaluationsTerminatorOptions as _MaxEvalOpts
@@ -2535,3 +2535,62 @@ def test_nsga2_publishes_higher_is_better_fitness():
     assert fronts[0][best]
     assert fronts[-1][worst]
     assert TournamentSelection.deterministic_select(np.array([worst, best]), fitness[[worst, best]]) == best
+
+
+@pytest.mark.ea
+def test_tournament_selection_seed_only_seeds():
+    """The seed must not decide the selection rule.
+
+    It used to: leaving it unset gave deterministic selection *and* an unseeded generator, so the only
+    way to get a reproducible mating step was to ask for the stochastic rule. The two are now
+    independent, which is what lets a whole run be reproduced from the template seed.
+    """
+    fitness = np.arange(20.0)
+    solutions = (pl.DataFrame({"x": np.arange(20.0)}), pl.DataFrame({"f": np.arange(20.0)}))
+
+    def winners(**kwargs) -> list[float]:
+        selector = TournamentSelection(winner_size=20, verbosity=0, publisher=Publisher(), **kwargs)
+        return selector.do(solutions, fitness.copy())[1]["f"].to_list()
+
+    # Deterministic and seeded: the same seed replays the same tournaments.
+    assert winners(seed=7) == winners(seed=7)
+    assert winners(seed=7) != winners(seed=8)
+
+    # Stochastic and seeded, and the rule is no longer implied by the seed.
+    assert winners(seed=7, stochastic=True) == winners(seed=7, stochastic=True)
+    assert winners(seed=7, stochastic=True) != winners(seed=7)
+
+    with pytest.raises(ValueError, match="stochastic must be True"):
+        TournamentSelection(winner_size=20, verbosity=0, publisher=Publisher(), selection_probability=0.5)
+
+
+@pytest.mark.ea
+@pytest.mark.parametrize("name", ["rvea", "nsga3", "nsga2", "ibea"])
+def test_a_run_is_reproducible_from_the_template_seed(name):
+    """Two runs of the same algorithm at the same template seed must agree exactly.
+
+    NSGA-II and IBEA used to fail this: their mating tournament seeded itself from OS entropy, so the
+    template seed reached every operator except that one.
+    """
+    problem = dtlz2(n_objectives=3, n_variables=10)
+    factories = {"rvea": rvea_options, "nsga3": nsga3_options, "nsga2": nsga2_options, "ibea": ibea_options}
+
+    def run() -> np.ndarray:
+        options = factories[name]()
+        options.template.verbosity = 2
+        options.template.use_archive = False
+        options.template.seed = 0
+        options.template.termination = _MaxEvalOpts(max_evaluations=2000)
+        if name == "rvea":
+            # RVEA's APD penalty is driven by terminator messages, and the selector listens for a
+            # different pair depending on the strategy.
+            options.template.selection.parameter_adaptation_strategy = (
+                ParameterAdaptationStrategy.FUNCTION_EVALUATION_BASED
+            )
+        solver, _extras = emo_constructor(options, problem)
+        return solver().optimal_outputs.to_numpy()
+
+    first, second = run(), run()
+
+    assert first.shape == second.shape
+    npt.assert_array_equal(first, second)
