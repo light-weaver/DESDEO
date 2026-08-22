@@ -576,7 +576,10 @@ def _rvea_selection_constrained(
                 select_violation = i
         if select != -1:
             selection[select] = True
-        else:
+        elif select_violation != -1:
+            # Guarding this branch matters as much as the one above: a reference vector with no
+            # associated solution at all leaves both indices at -1, and selection[-1] = True would
+            # silently promote the last individual in the array, once per empty vector.
             selection[select_violation] = True
 
     return selection, apd_fitness

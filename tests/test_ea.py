@@ -49,6 +49,7 @@ from desdeo.emo.operators.selection import (
     RVEASelector,
     _nsga2_crowding_distance_assignment,
     _rvea_selection,
+    _rvea_selection_constrained,
 )
 from desdeo.emo.operators.termination import (
     CompositeTerminator,
@@ -132,6 +133,44 @@ def test_rvea_selection_ignores_empty_reference_vectors():
     # At most one survivor per non-empty vector, and never more survivors than non-empty vectors.
     assert selection.sum() <= len(owners)
     # Every survivor must be the best member of a vector it is actually assigned to.
+    for i in np.where(selection)[0]:
+        assert int(np.argmax(cosines[i])) in owners
+
+
+@pytest.mark.ea
+def test_rvea_constrained_selection_ignores_empty_reference_vectors():
+    """The constrained selector must ignore empty reference vectors too.
+
+    It runs the same per-vector loop, but with two running indices: the best feasible solution and,
+    failing that, the least infeasible one. Both stay at -1 for a vector with no associated solution,
+    so the fallback branch had the same unguarded ``selection[-1] = True``. Constrained runs meet this
+    constantly, since feasibility shrinks the region the population occupies.
+    """
+    reference_vectors = np.vstack([np.eye(3), np.full((3, 3), 1 / np.sqrt(3))])
+    reference_vectors /= np.linalg.norm(reference_vectors, axis=1, keepdims=True)
+    fitness = np.array([[1.0, 5.0, 5.0], [5.0, 1.0, 5.0], [5.0, 5.0, 1.0]])
+    # Every solution infeasible, so only the fallback branch can ever select anything.
+    constraints = np.array([[2.0], [1.0], [3.0]])
+
+    selection, _apd = _rvea_selection_constrained(
+        fitness=fitness,
+        constraints=constraints,
+        reference_vectors=reference_vectors,
+        ideal=np.zeros(3),
+        partial_penalty=0.5,
+        gamma=np.full(len(reference_vectors), 1.0),
+    )
+
+    translated = fitness - np.zeros(3)
+    cosines = np.array(
+        [
+            [np.dot(translated[i], v) / max(1e-10, np.linalg.norm(translated[i])) for v in reference_vectors]
+            for i in range(len(fitness))
+        ]
+    )
+    owners = {int(np.argmax(cosines[i])) for i in range(len(fitness))}
+
+    assert selection.sum() <= len(owners)
     for i in np.where(selection)[0]:
         assert int(np.argmax(cosines[i])) in owners
 
