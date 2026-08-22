@@ -55,8 +55,12 @@ from desdeo.emo.operators.termination import (
     MaxEvaluationsTerminator,
     MaxGenerationsTerminator,
 )
+from desdeo.emo.options.algorithms import ibea_options, nsga2_options, nsga3_options
 from desdeo.emo.options.crossover import SimulatedBinaryCrossoverOptions
+from desdeo.emo.options.templates import emo_constructor
+from desdeo.emo.options.termination import MaxEvaluationsTerminatorOptions as _MaxEvalOpts
 from desdeo.problem import VariableDomainTypeEnum, VariableTypeEnum
+from desdeo.problem.external import PymooProblemParams, create_pymoo_problem
 from desdeo.problem.testproblems import (
     dtlz2,
     mixed_variable_dimensions_problem,
@@ -69,6 +73,7 @@ from desdeo.problem.testproblems import (
 )
 from desdeo.tools.message import EvaluatorMessageTopics, IntMessage, TerminatorMessageTopics
 from desdeo.tools.patterns import Publisher, Subscriber
+from desdeo.tools.reference_vectors import _ensure_axis_vectors, create_s_energy
 from desdeo.tools.utils import repair
 
 
@@ -2219,3 +2224,108 @@ def test_nsga2_crowding():
     assert all(distances[1:4] == np.inf)
     assert distances[0] < np.inf
     assert distances[-1] < np.inf
+
+
+@pytest.mark.ea
+@pytest.mark.parametrize(("n_objectives", "n_vectors"), [(3, 91), (5, 210), (8, 156), (3, 100), (4, 13)])
+def test_s_energy_reference_vectors_honour_the_requested_count(n_objectives, n_vectors):
+    """The Riesz s-energy design must produce exactly the requested number of vectors.
+
+    This is the reason it exists: the simplex lattice can only realize the binomial counts
+    `C(H + m - 1, m - 1)`, so it cannot hit an arbitrary target. At eight objectives the reachable
+    counts jump 36, 120, 330, and asking for 100 silently yields 36. Since a decomposition-based
+    algorithm's population size *is* its reference vector count, that rounding decides the
+    population size rather than the user.
+    """
+    vectors = create_s_energy(number_of_objectives=n_objectives, number_of_vectors=n_vectors, seed=0)
+
+    assert vectors.shape == (n_vectors, n_objectives)
+    npt.assert_allclose(vectors.sum(axis=1), 1.0, atol=1e-9)
+
+
+@pytest.mark.ea
+@pytest.mark.parametrize(("n_objectives", "n_vectors"), [(3, 91), (5, 210), (8, 156), (3, 5), (10, 11)])
+def test_s_energy_reference_vectors_always_include_every_axis(n_objectives, n_vectors):
+    """Every axis direction must be represented exactly.
+
+    A decomposition-based algorithm only searches towards directions it holds a vector for, so a set
+    missing an axis never targets that objective's extreme and the corresponding edge of the front
+    goes unapproximated. DESDEO enforces this rather than relying on the energy optimizer happening
+    to pin the simplex vertices.
+    """
+    vectors = create_s_energy(number_of_objectives=n_objectives, number_of_vectors=n_vectors, seed=0)
+
+    for axis in np.eye(n_objectives):
+        assert np.any(np.all(np.isclose(vectors, axis, atol=1e-9), axis=1)), (
+            f"axis {axis} is missing from the reference vectors"
+        )
+
+
+@pytest.mark.ea
+def test_ensure_axis_vectors_restores_a_missing_axis_without_changing_the_count():
+    """The axis guarantee substitutes the nearest vector, so the requested count is preserved."""
+    vectors = create_s_energy(number_of_objectives=3, number_of_vectors=20, seed=0)
+    first_axis = np.eye(3)[0]
+
+    # Displace whichever vector sits on the first axis, then check it is put back.
+    damaged = vectors.copy()
+    damaged[np.all(np.isclose(damaged, first_axis), axis=1)] = np.array([0.4, 0.3, 0.3])
+    assert not np.any(np.all(np.isclose(damaged, first_axis), axis=1))
+
+    repaired = _ensure_axis_vectors(damaged.copy())
+
+    assert repaired.shape == damaged.shape
+    assert np.any(np.all(np.isclose(repaired, first_axis), axis=1))
+
+
+@pytest.mark.ea
+def test_s_energy_rejects_fewer_vectors_than_objectives():
+    """Fewer vectors than objectives cannot cover the simplex vertices, so it is rejected early."""
+    with pytest.raises(ValueError, match="at least one vector per objective"):
+        create_s_energy(number_of_objectives=5, number_of_vectors=3)
+
+
+@pytest.mark.ea
+@pytest.mark.parametrize("n_objectives", [3, 5, 8])
+def test_s_energy_gives_every_selector_the_same_population_size(n_objectives):
+    """Selectors can be pinned to one population size at any objective count.
+
+    With the simplex lattice, `number_of_vectors=100` rounds *down* to 91 / 70 / 36 vectors at 3 / 5
+    / 8 objectives for NSGA-III, while NSGA-II and IBEA hold 100 -- so the algorithm factor would
+    otherwise carry a population-size difference that grows with the objective count.
+
+    RVEA is excluded deliberately: it keeps at most one survivor per reference vector, so
+    unassociated vectors leave its realised population slightly short of the nominal count. That is
+    its design, and papers report the nominal count for it.
+    """
+    n_vectors = {3: 91, 5: 210, 8: 156}[n_objectives]
+    n_variables = 24 if n_objectives >= 8 else 12
+    problem = create_pymoo_problem(PymooProblemParams(name="dtlz2", n_obj=n_objectives, n_var=n_variables))
+
+    sizes = {}
+    for name, factory in (
+        ("nsga3", nsga3_options),
+        ("nsga2", nsga2_options),
+        ("ibea", ibea_options),
+    ):
+        options = factory()
+        template = options.template
+        template.use_archive = False
+        template.seed = 0
+        template.generator.n_points = n_vectors
+        template.termination = _MaxEvalOpts(max_evaluations=2000)
+        if name == "nsga3":
+            previous = template.selection.reference_vector_options
+            template.selection.reference_vector_options = ReferenceVectorOptions(
+                creation_type="s_energy",
+                number_of_vectors=n_vectors,
+                vector_type=previous.vector_type,
+                adaptation_frequency=previous.adaptation_frequency,
+            )
+        else:
+            template.selection.population_size = n_vectors
+            template.mate_selection.winner_size = n_vectors
+        solver, _extras = emo_constructor(options, problem)
+        sizes[name] = len(solver().optimal_outputs)
+
+    assert set(sizes.values()) == {n_vectors}, f"population sizes diverged: {sizes}"

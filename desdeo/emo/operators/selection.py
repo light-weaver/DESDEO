@@ -34,6 +34,7 @@ from desdeo.tools.message import (
 )
 from desdeo.tools.non_dominated_sorting import fast_non_dominated_sort, fast_non_dominated_sort_indices
 from desdeo.tools.patterns import Publisher, Subscriber
+from desdeo.tools.reference_vectors import create_s_energy
 
 SolutionType = TypeVar("SolutionType", list, pl.DataFrame)
 
@@ -163,9 +164,9 @@ class BaseDecompositionSelector(BaseSelector):
         self.reference_vectors_initial: np.ndarray
 
         if self.reference_vector_options.creation_type == "s_energy":
-            raise NotImplementedError("Riesz s-energy criterion is not yet implemented.")
-
-        self._create_simplex()
+            self._create_s_energy()
+        else:
+            self._create_simplex()
 
         if self.reference_vector_options.reference_point:
             corrected_rp = np.array(
@@ -211,6 +212,23 @@ class BaseDecompositionSelector(BaseSelector):
             self.interactive_adapt_4(
                 corrected_ranges,
             )
+
+    def _create_s_energy(self):
+        """Create the reference vectors by minimizing the Riesz s-energy.
+
+        Unlike the simplex lattice, this honours `number_of_vectors` exactly, so the population size
+        of a decomposition-based algorithm can be chosen freely rather than being rounded down to the
+        nearest binomial count. `lattice_resolution` is not meaningful here and is left untouched.
+        """
+        vectors = create_s_energy(
+            number_of_objectives=self.num_dims,
+            number_of_vectors=self.reference_vector_options.number_of_vectors,
+            seed=self.seed,
+        )
+        # `invert_reference_vectors` mirrors the simplex branch, where it exists for NSGA-III.
+        self.reference_vectors = vectors if not self.invert_reference_vectors else 1 - vectors
+        self.reference_vectors_initial = np.copy(self.reference_vectors)
+        self._normalize_rvs()
 
     def _create_simplex(self):
         """Create the reference vectors using simplex lattice design."""
