@@ -62,6 +62,7 @@ from desdeo.emo.options.termination import MaxEvaluationsTerminatorOptions as _M
 from desdeo.problem import VariableDomainTypeEnum, VariableTypeEnum
 from desdeo.problem.external import PymooProblemParams, create_pymoo_problem
 from desdeo.problem.testproblems import (
+    car_side_impact,
     dtlz2,
     mixed_variable_dimensions_problem,
     momip_ti2,
@@ -72,6 +73,7 @@ from desdeo.problem.testproblems import (
     simple_test_problem,
 )
 from desdeo.tools.message import EvaluatorMessageTopics, IntMessage, TerminatorMessageTopics
+from desdeo.tools.non_dominated_sorting import fast_non_dominated_sort
 from desdeo.tools.patterns import Publisher, Subscriber
 from desdeo.tools.reference_vectors import _ensure_axis_vectors, create_s_energy
 from desdeo.tools.utils import repair
@@ -2404,3 +2406,86 @@ def test_nsga2_crowding_distance_skips_a_constant_objective():
     assert distances[0] == np.inf
     assert distances[-1] == np.inf
     assert np.isfinite(distances[1])
+
+
+@pytest.mark.ea
+def test_nsga2_ranks_feasible_solutions_ahead_of_infeasible_ones():
+    """Constrained domination, as a ranking: feasible first, then ordered by total violation."""
+    problem = car_side_impact(three_obj=False)
+    selector = NSGA2Selector(problem=problem, verbosity=1, publisher=Publisher(), population_size=4, seed=0)
+
+    # Two mutually non-dominated feasible solutions, then three infeasible ones whose objective
+    # values would otherwise put them in the first front.
+    targets = np.array([[1.0, 2.0], [2.0, 1.0], [0.0, 0.0], [0.0, 0.0], [0.0, 0.0]])
+    violations = np.array([0.0, 0.0, 5.0, 1.0, 1.0])
+
+    fronts = selector._sort(targets, violations)
+
+    assert len(fronts) == 3
+    npt.assert_array_equal(np.flatnonzero(fronts[0]), [0, 1])  # both feasible, mutually non-dominated
+    npt.assert_array_equal(np.flatnonzero(fronts[1]), [3, 4])  # equal violation, so one front
+    npt.assert_array_equal(np.flatnonzero(fronts[2]), [2])  # the worst violator, ranked last
+
+    # Without constraints the ranking must be untouched.
+    npt.assert_array_equal(selector._sort(targets, None), fast_non_dominated_sort(targets))
+
+
+@pytest.mark.ea
+def test_ibea_keeps_every_feasible_solution_it_cannot_replace():
+    """When the feasible solutions cannot fill the population, none of them may be discarded.
+
+    The binary indicator has no reading of an infeasible solution, so the remaining places go to the
+    least infeasible instead, and the published fitness must still rank every feasible solution above
+    every infeasible one for the mating tournament that consumes it.
+    """
+    problem = car_side_impact(three_obj=False)
+    publisher = Publisher()
+    evaluator = EMOEvaluator(problem=problem, publisher=publisher, verbosity=1)
+    generator = RandomGenerator(
+        problem=problem, evaluator=evaluator, publisher=publisher, n_points=40, seed=0, verbosity=1
+    )
+    selector = IBEASelector(problem=problem, verbosity=1, publisher=publisher, population_size=20, seed=0)
+    for component in (evaluator, generator, selector):
+        publisher.auto_subscribe(component)
+
+    solutions, outputs = generator.do()
+    constraints = [c.symbol for c in problem.constraints]
+    violations = np.maximum(outputs[constraints].to_numpy(), 0.0).sum(axis=1)
+    feasible = np.flatnonzero(violations <= 0)
+    assert 0 < len(feasible) <= selector.population_size, "the fixture must under-fill the population"
+
+    half = len(solutions) // 2
+    _, selected = selector.do(parents=(solutions[:half], outputs[:half]), offsprings=(solutions[half:], outputs[half:]))
+
+    assert len(selected) == selector.population_size
+    selected_violations = np.maximum(selected[constraints].to_numpy(), 0.0).sum(axis=1)
+    # Every feasible solution survived, and the rest are the least infeasible available.
+    assert int((selected_violations <= 0).sum()) == len(feasible)
+    assert selected_violations.max() <= np.sort(violations)[selector.population_size - 1]
+    # Fitness is higher-is-better, so every feasible solution must outrank every infeasible one.
+    infeasible = selected_violations > 0
+    assert selector.fitness[~infeasible].min() > selector.fitness[infeasible].max()
+
+
+@pytest.mark.ea
+@pytest.mark.parametrize("name", ["nsga2", "ibea"])
+def test_constrained_selectors_reach_a_feasible_population(name):
+    """Both selectors must drive a constrained run to feasibility, not merely tolerate constraints.
+
+    Ignoring the constraints entirely, as both did before, leaves most of the final population
+    infeasible on this problem, so a loose assertion would not distinguish the two.
+    """
+    problem = car_side_impact(three_obj=False)
+    options = {"nsga2": nsga2_options, "ibea": ibea_options}[name]()
+    options.template.verbosity = 2
+    options.template.use_archive = False
+    options.template.seed = 0
+    options.template.termination = _MaxEvalOpts(max_evaluations=6000)
+
+    solver, _extras = emo_constructor(options, problem)
+    outputs = solver().optimal_outputs
+
+    constraints = [c.symbol for c in problem.constraints]
+    violations = np.maximum(outputs[constraints].to_numpy(), 0.0).sum(axis=1)
+
+    assert (violations <= 0).all(), f"{name} finished with {int((violations > 0).sum())} infeasible solutions"
