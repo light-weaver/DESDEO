@@ -466,7 +466,12 @@ def _rvea_selection(
             if apd < min_apd:
                 min_apd = apd
                 select = i
-        selection[select] = True
+        # A reference vector with no associated solution leaves select at -1. Guarding here is
+        # essential: selection[-1] = True would silently promote the *last* individual in the array,
+        # once per empty vector. Empty vectors are common, and become commoner as the number of
+        # objectives grows, so the unguarded write biases selection exactly where RVEA is used most.
+        if select != -1:
+            selection[select] = True
 
     return selection, apd_fitness
 

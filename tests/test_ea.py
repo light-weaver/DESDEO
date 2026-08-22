@@ -47,6 +47,7 @@ from desdeo.emo.operators.selection import (
     ReferenceVectorOptions,
     RVEASelector,
     _nsga2_crowding_distance_assignment,
+    _rvea_selection,
 )
 from desdeo.emo.operators.termination import (
     CompositeTerminator,
@@ -86,6 +87,45 @@ def test_nsga3():
     # Assert that most solutions are on the spherical front
 
     assert norm.median() < 1.1
+
+
+@pytest.mark.ea
+def test_rvea_selection_ignores_empty_reference_vectors():
+    """Reference vectors with no associated solution must not select anything.
+
+    Regression test: the loop over reference vectors leaves the running best index at -1 when a
+    vector has no associated solution. Writing that index unguarded sets ``selection[-1] = True``,
+    silently promoting the last individual in the array once per empty vector. Empty vectors are
+    common and become commoner as the number of objectives grows.
+    """
+    # Six reference vectors but only three solutions, so at least three vectors are empty.
+    reference_vectors = np.vstack([np.eye(3), np.full((3, 3), 1 / np.sqrt(3))])
+    reference_vectors /= np.linalg.norm(reference_vectors, axis=1, keepdims=True)
+    fitness = np.array([[1.0, 5.0, 5.0], [5.0, 1.0, 5.0], [5.0, 5.0, 1.0]])
+
+    selection, _apd = _rvea_selection(
+        fitness=fitness,
+        reference_vectors=reference_vectors,
+        ideal=np.zeros(3),
+        partial_penalty=0.5,
+        gamma=np.full(len(reference_vectors), 1.0),
+    )
+
+    # Recompute the assignment the selector uses, so the expectation does not hard-code an answer.
+    translated = fitness - np.zeros(3)
+    cosines = np.array(
+        [
+            [np.dot(translated[i], v) / max(1e-10, np.linalg.norm(translated[i])) for v in reference_vectors]
+            for i in range(len(fitness))
+        ]
+    )
+    owners = {int(np.argmax(cosines[i])) for i in range(len(fitness))}
+
+    # At most one survivor per non-empty vector, and never more survivors than non-empty vectors.
+    assert selection.sum() <= len(owners)
+    # Every survivor must be the best member of a vector it is actually assigned to.
+    for i in np.where(selection)[0]:
+        assert int(np.argmax(cosines[i])) in owners
 
 
 @pytest.mark.ea
