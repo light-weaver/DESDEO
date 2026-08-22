@@ -1750,10 +1750,10 @@ class NSGA2Selector(BaseSelector):
             parents_a = parents[1][self.target_symbols].to_numpy()
             fronts = self._sort(parents_a, total_constraint_violation(parents[1], self.constraints_symbols))
 
-            # assign fitness according to non-dom rank (lower better)
+            # assign fitness according to non-dom rank, flipped to higher-is-better and kept
+            # strictly positive for the consumers of SELECTED_FITNESS; see the main branch below
             scores = np.arange(len(fronts))
-            fitness_values = scores @ fronts
-            self.fitness = fitness_values
+            self.fitness = len(fronts) - scores @ fronts
 
             # all selected in first iteration
             self.selection = list(range(len(parents[1])))
@@ -1883,7 +1883,15 @@ class NSGA2Selector(BaseSelector):
         solutions = pl.DataFrame(new_parents_solutions, schema=parents[0].schema)
         outputs = pl.DataFrame(new_parents, schema=parents[1].schema)
 
-        self.fitness = fitness_values
+        # Everything downstream of SELECTED_FITNESS reads it as higher-is-better: the mating
+        # tournament takes an argmax, and roulette-wheel selection treats it as a weight, which also
+        # requires it to be positive. The NSGA-II quantity built above is the opposite -- front rank
+        # plus a reversed crowding distance, lower is better -- so publishing it directly made the
+        # binary tournament pick the loser of every pair. Reflecting it about the worst attainable
+        # value flips the direction, keeps every value strictly positive (a front's fitness lies in
+        # `(n_fronts - rank - 1, n_fronts - rank]`, since the reversed distance never reaches 1) and
+        # preserves the ordering exactly.
+        self.fitness = (np.nanmax(rankings) + 1.0) - fitness_values
 
         whole_fronts = fronts[: last_whole_front_idx + 1]
         whole_indices = [np.where(row)[0].tolist() for row in whole_fronts]

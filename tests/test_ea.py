@@ -1,6 +1,7 @@
 """Tests for Evolutionary Algorithms."""
 
 from contextlib import suppress
+from itertools import pairwise
 
 import numpy as np
 import numpy.testing as npt
@@ -2489,3 +2490,48 @@ def test_constrained_selectors_reach_a_feasible_population(name):
     violations = np.maximum(outputs[constraints].to_numpy(), 0.0).sum(axis=1)
 
     assert (violations <= 0).all(), f"{name} finished with {int((violations > 0).sum())} infeasible solutions"
+
+
+@pytest.mark.ea
+def test_nsga2_publishes_higher_is_better_fitness():
+    """The fitness NSGA-II publishes must rank better solutions higher, and stay positive.
+
+    Every consumer of `SELECTED_FITNESS` reads it that way: the mating tournament takes an argmax,
+    and roulette-wheel selection treats it as a weight. NSGA-II builds the opposite quantity
+    internally -- front rank plus a reversed crowding distance -- so publishing it unflipped made the
+    binary tournament mate the loser of every pair.
+    """
+    population_size = 50
+    problem = dtlz2(n_objectives=3, n_variables=10)
+    publisher = Publisher()
+    evaluator = EMOEvaluator(problem=problem, publisher=publisher, verbosity=1)
+    generator = RandomGenerator(
+        problem=problem,
+        evaluator=evaluator,
+        publisher=publisher,
+        n_points=2 * population_size,
+        seed=0,
+        verbosity=1,
+    )
+    selector = NSGA2Selector(problem=problem, verbosity=2, publisher=publisher, population_size=population_size, seed=0)
+    for component in (evaluator, generator, selector):
+        publisher.auto_subscribe(component)
+
+    solutions, outputs = generator.do()
+    half = len(solutions) // 2
+    _, selected = selector.do(parents=(solutions[:half], outputs[:half]), offsprings=(solutions[half:], outputs[half:]))
+
+    fitness = selector.fitness
+    assert (fitness > 0).all(), "roulette-wheel selection reads the fitness as a weight"
+
+    # A whole front outranks every later one, since the reversed crowding distance never reaches 1.
+    fronts = fast_non_dominated_sort(selected[selector.target_symbols].to_numpy())
+    assert len(fronts) > 1, "the fixture must produce more than one front for this to mean anything"
+    for better, worse in pairwise(fronts):
+        assert fitness[better].min() > fitness[worse].max()
+
+    # Which is what makes the tournament pick the better of any two solutions.
+    best, worst = int(np.argmax(fitness)), int(np.argmin(fitness))
+    assert fronts[0][best]
+    assert fronts[-1][worst]
+    assert TournamentSelection.deterministic_select(np.array([worst, best]), fitness[[worst, best]]) == best
