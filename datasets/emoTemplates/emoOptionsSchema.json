@@ -1301,9 +1301,17 @@
                     "title": "Name",
                     "type": "string"
                 },
-                "xover_probability": {
+                "pair_xover_probability": {
                     "default": 1.0,
-                    "description": "The SBX crossover probability.",
+                    "description": "Probability that a parent pair is recombined at all.",
+                    "maximum": 1.0,
+                    "minimum": 0.0,
+                    "title": "Pair Xover Probability",
+                    "type": "number"
+                },
+                "xover_probability": {
+                    "default": 0.5,
+                    "description": "The per-variable SBX crossover probability.",
                     "maximum": 1.0,
                     "minimum": 0.0,
                     "title": "Xover Probability",

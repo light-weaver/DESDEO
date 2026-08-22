@@ -59,7 +59,10 @@ def rvea_options() -> EMOOptions:
             crossover=SimulatedBinaryCrossoverOptions(
                 name="SimulatedBinaryCrossover",
                 xover_distribution=30,
-                xover_probability=1,
+                # The paper's p_c = 1 is a per-pair probability; the per-variable rate is Deb and
+                # Agrawal's 0.5. Collapsing the two would cross every variable instead of half.
+                pair_xover_probability=1.0,
+                xover_probability=0.5,
                 uniform_xover_probability=0.5,
             ),
             mutation=BoundedPolynomialMutationOptions(
@@ -122,7 +125,10 @@ def nsga3_options() -> EMOOptions:
             crossover=SimulatedBinaryCrossoverOptions(
                 name="SimulatedBinaryCrossover",
                 xover_distribution=30,
-                xover_probability=1.0,
+                # The paper's p_c = 1 is a per-pair probability; the per-variable rate is Deb
+                # and Agrawal's 0.5. Collapsing the two would cross every variable, not half.
+                pair_xover_probability=1.0,
+                xover_probability=0.5,
                 uniform_xover_probability=0.5,
             ),
             mutation=BoundedPolynomialMutationOptions(
@@ -179,13 +185,14 @@ def ibea_options() -> EMOOptions:
             crossover=SimulatedBinaryCrossoverOptions(
                 name="SimulatedBinaryCrossover",
                 xover_distribution=20,  # Note that the operator defaults are different in Template2
-                xover_probability=1.0,
+                pair_xover_probability=1.0,
+                xover_probability=0.5,
                 uniform_xover_probability=0.5,
             ),
             mutation=BoundedPolynomialMutationOptions(
                 name="BoundedPolynomialMutation",
                 distribution_index=20,
-                mutation_probability=0.01,
+                mutation_probability=None,
             ),
             selection=IBEASelectorOptions(
                 name="IBEASelector",
@@ -231,13 +238,15 @@ def nsga2_options() -> EMOOptions:
             crossover=SimulatedBinaryCrossoverOptions(
                 name="SimulatedBinaryCrossover",
                 xover_distribution=20,  # Note that the operator defaults are different in Template2
-                xover_probability=0.9,
+                # NSGA-II reports p_c = 0.9, which is per pair, not per variable.
+                pair_xover_probability=0.9,
+                xover_probability=0.5,
                 uniform_xover_probability=0.5,
             ),
             mutation=BoundedPolynomialMutationOptions(
                 name="BoundedPolynomialMutation",
                 distribution_index=20,
-                mutation_probability=0.01,
+                mutation_probability=None,
             ),
             selection=NSGA2SelectorOptions(
                 name="NSGA2Selector",
@@ -252,9 +261,10 @@ def nsga2_options() -> EMOOptions:
                 name="LHSGenerator",
                 n_points=100,
             ),
-            repair=NoRepairOptions(
-                name="NoRepair",
-            ),
+            # Deb's NSGA-II reference code clamps offspring onto the variable bounds. Leaving this as
+            # NoRepair lets an operator that can leave the box (or emit NaN) feed straight into the
+            # evaluator, which the other real-coded templates here already guard against.
+            repair=ClipRepairOptions(),
             termination=MaxGenerationsTerminatorOptions(
                 name="MaxGenerationsTerminator",
                 max_generations=100,
@@ -393,7 +403,8 @@ def xlemoo_options() -> EMOOptions:
             crossover=SimulatedBinaryCrossoverOptions(
                 name="SimulatedBinaryCrossover",
                 xover_distribution=30,
-                xover_probability=1.0,
+                pair_xover_probability=1.0,
+                xover_probability=0.5,
             ),
             mutation=BoundedPolynomialMutationOptions(
                 name="BoundedPolynomialMutation",
@@ -488,7 +499,8 @@ def sms_emoa_options() -> EMOOptions:
             crossover=SimulatedBinaryCrossoverOptions(
                 name="SimulatedBinaryCrossover",
                 xover_distribution=30,
-                xover_probability=1.0,
+                pair_xover_probability=1.0,
+                xover_probability=0.5,
                 uniform_xover_probability=0.5,
             ),
             mutation=BoundedPolynomialMutationOptions(

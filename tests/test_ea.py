@@ -1075,6 +1075,61 @@ def test_continuous_crossover_rejects_non_continuous_problems(crossover_class):
 
 
 @pytest.mark.ea
+@pytest.mark.parametrize("truncated", [True, False])
+def test_simulated_binary_crossover_pair_probability_copies_whole_pairs(truncated):
+    """A pair that fails the per-pair draw must be copied whole, not variable by variable.
+
+    `pair_xover_probability` is the `p_c` the literature reports (1.0 in RVEA and NSGA-III, 0.9 in
+    NSGA-II) and is a separate level from the per-variable `xover_probability`. Folding it into the
+    per-variable rate would reproduce the marginal rate but destroy the within-pair correlation:
+    the whole point is that a failed pair keeps all of its variables together.
+    """
+    problem = dtlz2(n_objectives=3, n_variables=8)
+    symbols = [var.symbol for var in problem.get_flattened_variables()]
+    rng = np.random.default_rng(0)
+    values = rng.random((400, len(symbols)))
+    parents = pl.DataFrame(values, schema=symbols)
+
+    def untouched_rows(pair_probability: float) -> float:
+        crossover = SimulatedBinaryCrossover(
+            problem=problem,
+            publisher=Publisher(),
+            seed=0,
+            verbosity=1,
+            truncated=truncated,
+            pair_xover_probability=pair_probability,
+        )
+        offspring = crossover.do(population=parents, to_mate=list(range(len(values)))).to_numpy().astype(float)
+        # A copied row equals one of the parent rows in *every* variable at once.
+        return float(np.mean([np.any(np.all(np.isclose(row, values), axis=1)) for row in offspring]))
+
+    # Never recombining leaves every row identical to a parent; always recombining leaves ~none.
+    assert untouched_rows(0.0) == 1.0
+    assert untouched_rows(1.0) < 0.05
+    # An intermediate rate lands in between, and does so by copying whole rows rather than
+    # individual variables -- which is exactly what the all-variables-at-once test above checks.
+    assert 0.3 < untouched_rows(0.5) < 0.7
+
+
+@pytest.mark.ea
+def test_simulated_binary_crossover_per_variable_probability_default_is_one_half():
+    """The per-variable rate defaults to 0.5, and `p_c` lives in its own parameter.
+
+    Deb and Agrawal (1995) state "we choose to perform SBX in each variable with probability 0.5",
+    and every other framework follows them. The `p_c = 1.0` reported in the RVEA and NSGA-III papers
+    is a per-*pair* probability, so it belongs in `pair_xover_probability`; applying it per variable
+    instead crosses every variable rather than half of them.
+    """
+    assert SimulatedBinaryCrossoverOptions().xover_probability == 0.5
+    assert SimulatedBinaryCrossoverOptions().pair_xover_probability == 1.0
+
+    problem = dtlz2(n_objectives=3, n_variables=8)
+    crossover = SimulatedBinaryCrossover(problem=problem, publisher=Publisher(), seed=0, verbosity=1)
+    assert crossover.xover_probability == 0.5
+    assert crossover.pair_xover_probability == 1.0
+
+
+@pytest.mark.ea
 def test_simulated_binary_crossover_defaults_to_the_truncated_variant():
     """Test that SBX uses the truncated formulation unless asked otherwise.
 

@@ -3,7 +3,8 @@
     "template": {
         "crossover": {
             "name": "SimulatedBinaryCrossover",
-            "xover_probability": 1.0,
+            "pair_xover_probability": 1.0,
+            "xover_probability": 0.5,
             "xover_distribution": 30.0,
             "truncated": true,
             "uniform_xover_probability": 0.5

@@ -134,7 +134,8 @@ class SimulatedBinaryCrossover(BaseCrossover):
         seed: int,
         verbosity: int,
         publisher: Publisher,
-        xover_probability: float = 1.0,
+        pair_xover_probability: float = 1.0,
+        xover_probability: float = 0.5,
         uniform_xover_probability: float = 0.5,
         xover_distribution: float = 30,
         truncated: bool = True,
@@ -147,9 +148,17 @@ class SimulatedBinaryCrossover(BaseCrossover):
             verbosity (int): the verbosity level of the component. The keys in `provided_topics` tell what
                 topics are provided by the operator at each verbosity level. Recommended to be set to 1.
             publisher (Publisher): the publisher to which the operator will publish messages.
-            xover_probability (float, optional): the crossover probability parameter.
-                This parameter decides whether the SBX operation is performed on a decision variable.
-                Ranges between 0 and 1.0. Defaults to 1.0. Only change this if you know what you are doing.
+            pair_xover_probability (float, optional): the probability that a parent pair is recombined at
+                all. Drawn once per pair: on failure the pair is copied to the offspring unchanged, with
+                every decision variable kept together. This is the `p_c` reported in the literature
+                (1.0 in the RVEA and NSGA-III papers, 0.9 in NSGA-II). Ranges between 0 and 1.0.
+                Defaults to 1.0.
+            xover_probability (float, optional): the per-variable crossover probability. Drawn once per
+                decision variable, and decides whether the SBX operation is performed on that variable.
+                Ranges between 0 and 1.0. Defaults to 0.5, following Deb and Agrawal (1995), who state
+                "we choose to perform SBX in each variable with probability 0.5". Note this is a
+                *separate* level from `pair_xover_probability`: the literature's `p_c = 1.0` refers to
+                the pair, not to the variable, so it belongs in `pair_xover_probability`.
             uniform_xover_probability (float, optional): the uniform crossover probability parameter.
                 This parameter decides whether the decision variable components of the parents are swapped for the
                 offspring or not. Ranges between 0 and 1.0. Defaults to 0.5. Only operates on variables that
@@ -167,10 +176,13 @@ class SimulatedBinaryCrossover(BaseCrossover):
 
         if problem.variable_domain is not VariableDomainTypeEnum.continuous:
             raise ValueError("SimulatedBinaryCrossover only works on continuous problems.")
+        if not 0 <= pair_xover_probability <= 1:
+            raise ValueError("Pair crossover probability must be between 0 and 1.")
         if not 0 <= xover_probability <= 1:
             raise ValueError("Crossover probability must be between 0 and 1.")
         if xover_distribution <= 0:
             raise ValueError("Crossover distribution must be positive.")
+        self.pair_xover_probability = pair_xover_probability
         self.xover_probability = xover_probability
         self.xover_distribution = xover_distribution
         self.uniform_xover_probability = uniform_xover_probability
@@ -245,6 +257,13 @@ class SimulatedBinaryCrossover(BaseCrossover):
         HALF = 0.5  # NOQA: N806
         # TODO(@light-weaver): Extract into a numba jitted function.
         for i in range(0, mate_size, 2):
+            # One draw per pair, before any per-variable draw. A pair that fails is copied whole, so
+            # all of its variables stay together -- that within-pair correlation is the point, and is
+            # what folding p_c into the per-variable rate would destroy.
+            if self.rng.random() > self.pair_xover_probability:
+                offspring[i] = mating_pop[i]
+                offspring[i + 1] = mating_pop[i + 1]
+                continue
             beta = np.zeros(num_var)
             miu = self.rng.random(num_var)
             # Simulated binary crossover (SBX) operator tries to mimic the behavior of single-point crossover by
@@ -350,6 +369,13 @@ class SimulatedBinaryCrossover(BaseCrossover):
 
         # TODO(@light-weaver): Extract into a numba jitted function.
         for i in range(0, mate_size, 2):
+            # One draw per pair, before any per-variable draw. A pair that fails is copied whole, so
+            # all of its variables stay together -- that within-pair correlation is the point, and is
+            # what folding p_c into the per-variable rate would destroy.
+            if self.rng.random() > self.pair_xover_probability:
+                offspring[i] = mating_pop[i]
+                offspring[i + 1] = mating_pop[i + 1]
+                continue
             beta = np.zeros(num_var)
             miu = self.rng.random(num_var)
             # Apply crossover only for certain decision variables
