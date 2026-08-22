@@ -209,16 +209,13 @@ def create_s_energy(
     36, 120, 330, and asking for 100 vectors yields 36. That matters because the population size of a
     decomposition-based algorithm is its reference vector count.
 
-    The implementation delegates to pymoo, which is already a DESDEO dependency, rather than
-    reimplementing the optimizer.
+    Every axis direction is guaranteed to be present exactly, so each objective's extreme is always
+    a search target; see `_ensure_axis_vectors`.
 
     Args:
         number_of_objectives (int): Number of objectives (dimensions).
         number_of_vectors (int): Exact number of reference vectors to produce.
         seed (int, optional): Seed for the energy optimization, which is stochastic. Defaults to 0.
-
-    Every axis direction is guaranteed to be present exactly, so each objective's extreme is always
-    a search target; see `_ensure_axis_vectors`.
 
     Returns:
         np.ndarray: Array of reference vectors, shape `(number_of_vectors, number_of_objectives)`,
