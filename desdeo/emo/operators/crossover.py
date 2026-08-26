@@ -139,6 +139,7 @@ class SimulatedBinaryCrossover(BaseCrossover):
         uniform_xover_probability: float = 0.5,
         xover_distribution: float = 30,
         truncated: bool = True,
+        swap_uncrossed_variables: bool = False,
     ):
         """Initialize a simulated binary crossover operator.
 
@@ -169,6 +170,13 @@ class SimulatedBinaryCrossover(BaseCrossover):
                 more spread out. Defaults to 30.
             truncated (bool, optional): whether to truncate the probability distribution to keep the offspring
                 within the variable bounds. Defaults to True.
+            swap_uncrossed_variables (bool, optional): whether a decision variable *not* selected by
+                `xover_probability` is exchanged between the two offspring instead of inherited
+                unchanged. Defaults to False, which is what every implementation surveyed does except
+                jMetal (Java). jMetal's else-branch assigns `offspring1[i] = parent2[i]` and
+                `offspring2[i] = parent1[i]`, adding a genuine uniform-crossover component on top of
+                SBX: at the standard per-variable rate of 0.5, half of the genome is swapped wholesale
+                every time a pair recombines. Set it to reproduce jMetal; leave it alone otherwise.
         """
         # Subscribes to no topics, so no need to stroe/pass the topics to the super class.
         super().__init__(problem, verbosity=verbosity, publisher=publisher, seed=seed)
@@ -187,6 +195,7 @@ class SimulatedBinaryCrossover(BaseCrossover):
         self.xover_distribution = xover_distribution
         self.uniform_xover_probability = uniform_xover_probability
         self.truncated = truncated
+        self.swap_uncrossed_variables = swap_uncrossed_variables
 
     def do(
         self,
@@ -287,7 +296,9 @@ class SimulatedBinaryCrossover(BaseCrossover):
             # offspring[i] = avg + diff = mating_pop[i]. (Beta = +1 would swap the parents instead,
             # which is what PlatEMO's opposite sign convention on the offspring expression means by
             # setting the sentinel to +1 there.)
-            beta[self.rng.random(num_var) > self.xover_probability] = -1
+            # jMetal wants exactly that swap on the uncrossed variables, so the sentinel flips sign.
+            uncrossed_sentinel = 1 if self.swap_uncrossed_variables else -1
+            beta[self.rng.random(num_var) > self.xover_probability] = uncrossed_sentinel
             # Note that when mu < 0.5, abs(beta) ends up being less than 1, resulting in a contracting crossover.
             # The opposite is true when mu > 0.5, resulting in an expanding crossover.
             avg = (mating_pop[i] + mating_pop[i + 1]) / 2
@@ -444,8 +455,10 @@ class SimulatedBinaryCrossover(BaseCrossover):
             # explicit copy rather than a beta = 1 sentinel: with the sorted difference above, beta = 1
             # would hand every untouched variable's smaller value to offspring i and the larger to
             # offspring i + 1, biasing the pair instead of leaving it alone.
-            offspring[i, ~sbx_mask] = mating_pop[i, ~sbx_mask]
-            offspring[i + 1, ~sbx_mask] = mating_pop[i + 1, ~sbx_mask]
+            # jMetal exchanges them between the offspring instead; see `swap_uncrossed_variables`.
+            first, second = (i + 1, i) if self.swap_uncrossed_variables else (i, i + 1)
+            offspring[i, ~sbx_mask] = mating_pop[first, ~sbx_mask]
+            offspring[i + 1, ~sbx_mask] = mating_pop[second, ~sbx_mask]
 
             # Swap the offspring for decision variables where binary crossover is applied
             offspring[i, binary_mask], offspring[i + 1, binary_mask] = (

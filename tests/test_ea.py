@@ -1154,6 +1154,63 @@ def test_simulated_binary_crossover_pair_probability_copies_whole_pairs(truncate
 
 
 @pytest.mark.ea
+@pytest.mark.parametrize("truncated", [True, False])
+def test_simulated_binary_crossover_can_swap_the_uncrossed_variables(truncated):
+    """`swap_uncrossed_variables` reproduces jMetal (Java), and changes nothing else.
+
+    Every implementation surveyed inherits a variable that failed the per-variable draw unchanged.
+    jMetal's else-branch instead assigns `offspring1[i] = parent2[i]` and `offspring2[i] =
+    parent1[i]`, which puts a genuine uniform-crossover component on top of SBX: at the standard
+    per-variable rate of 0.5, half the genome is swapped wholesale whenever a pair recombines.
+
+    The two parents here are constant along each row, so an uncrossed variable is recognisable by
+    landing exactly on a parent value while a crossed one is perturbed away from both.
+    """
+    problem = dtlz2(n_objectives=3, n_variables=10)
+    symbols = [var.symbol for var in problem.get_flattened_variables()]
+    low, high = 0.2, 0.8
+    parents = pl.DataFrame(np.array([[low] * len(symbols), [high] * len(symbols)]), schema=symbols, orient="row")
+
+    def offspring(swap: bool) -> np.ndarray:
+        crossover = SimulatedBinaryCrossover(
+            problem=problem,
+            publisher=Publisher(),
+            seed=7,
+            verbosity=1,
+            truncated=truncated,
+            pair_xover_probability=1.0,
+            xover_probability=0.5,
+            uniform_xover_probability=0.0,
+            swap_uncrossed_variables=swap,
+        )
+        return crossover.do(population=parents, to_mate=[0, 1]).to_numpy().astype(float)
+
+    copied, swapped = offspring(swap=False), offspring(swap=True)
+
+    kept = np.isclose(copied[0], low)
+    assert kept.any(), "the per-variable rate should leave some variables uncrossed"
+
+    # The uncrossed variables flip from this parent's value to the other parent's.
+    assert np.allclose(swapped[0][kept], high)
+    assert np.allclose(swapped[1][kept], low)
+
+    # Everything else is untouched: same RNG stream, same SBX values on the crossed variables, so
+    # the flag isolates the swap rule instead of perturbing the whole operator.
+    assert np.allclose(copied[0][~kept], swapped[0][~kept])
+    assert np.allclose(copied[1][~kept], swapped[1][~kept])
+
+
+@pytest.mark.ea
+def test_simulated_binary_crossover_does_not_swap_uncrossed_variables_by_default():
+    """Reproducing jMetal has to be asked for explicitly, because jMetal is the outlier here."""
+    assert SimulatedBinaryCrossoverOptions().swap_uncrossed_variables is False
+    crossover = SimulatedBinaryCrossover(
+        problem=dtlz2(n_objectives=3, n_variables=8), publisher=Publisher(), seed=0, verbosity=1
+    )
+    assert crossover.swap_uncrossed_variables is False
+
+
+@pytest.mark.ea
 def test_simulated_binary_crossover_per_variable_probability_default_is_one_half():
     """The per-variable rate defaults to 0.5, and `p_c` lives in its own parameter.
 

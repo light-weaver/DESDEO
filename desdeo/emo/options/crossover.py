@@ -58,6 +58,18 @@ class SimulatedBinaryCrossoverOptions(BaseModel):
     )
     """The uniform crossover probability. Only operates on variables that have already been selected for crossover
     by the xover_probability parameter."""
+    swap_uncrossed_variables: bool = Field(
+        default=False,
+        description=(
+            "Whether a decision variable not selected for SBX is exchanged between the two offspring "
+            "instead of inherited unchanged. Set only to reproduce jMetal (Java)."
+        ),
+    )
+    """Whether a decision variable not selected by `xover_probability` is exchanged between the two offspring
+    instead of inherited unchanged. Defaults to False, which is what every implementation surveyed does except
+    jMetal (Java), whose else-branch assigns `offspring1[i] = parent2[i]` and `offspring2[i] = parent1[i]`.
+    That adds a genuine uniform-crossover component on top of SBX: at the standard per-variable rate of 0.5,
+    half of the genome is swapped wholesale every time a pair recombines."""
 
 
 class SinglePointBinaryCrossoverOptions(BaseModel):
