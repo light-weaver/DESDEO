@@ -1381,6 +1381,70 @@ def test_bounded_exponential_crossover_handles_shared_parent_values():
 
 
 @pytest.mark.ea
+def test_bounded_exponential_crossover_uniform_component_exchanges_parental_identity():
+    """`uniform_xover_probability` must hand variables to the other parent's line, and only then.
+
+    BEX displaces each offspring from its own parent, so identity retention is structurally 1.0 and
+    the operator sits exactly where SBX sits with the parameter at 0.0. The claim under test is that
+    the parameter buys the same exchange SBX gets from flipping the sign of beta: at 0.0 every
+    offspring stays nearer its own parent in every variable, and at 0.5 about half the variables
+    cross over. Measuring which parent each offspring variable landed nearest is what makes that
+    falsifiable -- a shape assertion would pass whatever the swap did.
+    """
+    publisher = Publisher()
+    problem = dtlz2(n_objectives=3, n_variables=8)
+    symbols = [var.symbol for var in problem.get_flattened_variables()]
+
+    # Parents far apart in every variable, so "nearest parent" is unambiguous for a lambda this small.
+    n_pairs, low, high = 400, 0.1, 0.9
+    parents = np.tile(np.array([[low] * len(symbols), [high] * len(symbols)]), (n_pairs, 1))
+
+    retention = {}
+    for probability in (0.0, 0.5, 1.0):
+        crossover = BoundedExponentialCrossover(
+            problem=problem,
+            publisher=publisher,
+            verbosity=1,
+            seed=0,
+            lambda_=0.05,
+            uniform_xover_probability=probability,
+        )
+        children = crossover.do(
+            population=pl.DataFrame(parents, schema=symbols), to_mate=list(range(2 * n_pairs))
+        ).to_numpy()
+        # The first half of the children descend from the low parents, the second half from the high.
+        first_half = children[:n_pairs, :]
+        retention[probability] = float(np.mean(np.abs(first_half - low) < np.abs(first_half - high)))
+
+    assert retention[0.0] == 1.0, "at 0.0 every offspring must keep its own parent's identity"
+    assert retention[1.0] == 0.0, "at 1.0 every variable must be handed to the other parent's line"
+    assert 0.4 < retention[0.5] < 0.6, f"at 0.5 about half should cross, got {retention[0.5]:.3f}"
+
+
+@pytest.mark.ea
+def test_bounded_exponential_crossover_uniform_component_is_off_by_default():
+    """The default must not change what the operator already did.
+
+    BEX predates this parameter and the study's `bex` arm was measured without it, so a default of
+    0.5 -- which is what `SimulatedBinaryCrossover` uses -- would silently reinterpret existing
+    results. Whether 0.5 is better here is an open question, not an assumption to bake into a default.
+    """
+    publisher = Publisher()
+    problem = dtlz2(n_objectives=3, n_variables=5)
+    symbols = [var.symbol for var in problem.get_flattened_variables()]
+    population = pl.DataFrame(np.random.default_rng(0).random((10, len(symbols))), schema=symbols)
+
+    defaulted = BoundedExponentialCrossover(problem=problem, publisher=publisher, verbosity=1, seed=3)
+    explicit = BoundedExponentialCrossover(
+        problem=problem, publisher=publisher, verbosity=1, seed=3, uniform_xover_probability=0.0
+    )
+    assert defaulted.uniform_xover_probability == 0.0
+    assert defaulted.do(population=population, to_mate=list(range(10))).equals(
+        explicit.do(population=population, to_mate=list(range(10)))
+    )
+
+
+@pytest.mark.ea
 def test_bounded_exponential_crossover_is_parent_centric_in_both_orderings():
     """BEX must decay away from each parent whichever way round the pair is stored.
 

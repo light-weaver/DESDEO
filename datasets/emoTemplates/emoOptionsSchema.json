@@ -87,6 +87,14 @@
                     "exclusiveMinimum": 0.0,
                     "title": "Lambda",
                     "type": "number"
+                },
+                "uniform_xover_probability": {
+                    "default": 0.0,
+                    "description": "Per-variable probability that the two offspring exchange which parent they descend from. 0.0 keeps the operator's original behaviour, where each offspring keeps its own parent's identity in every variable.",
+                    "maximum": 1.0,
+                    "minimum": 0.0,
+                    "title": "Uniform Xover Probability",
+                    "type": "number"
                 }
             },
             "title": "BoundedExponentialCrossoverOptions",
@@ -1337,6 +1345,12 @@
                     "minimum": 0.0,
                     "title": "Uniform Xover Probability",
                     "type": "number"
+                },
+                "swap_uncrossed_variables": {
+                    "default": false,
+                    "description": "Whether a decision variable not selected for SBX is exchanged between the two offspring instead of inherited unchanged. Set only to reproduce jMetal (Java).",
+                    "title": "Swap Uncrossed Variables",
+                    "type": "boolean"
                 }
             },
             "title": "SimulatedBinaryCrossoverOptions",
