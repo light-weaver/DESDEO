@@ -12,7 +12,6 @@ Warning:
 """
 
 import time
-from abc import abstractmethod
 from collections.abc import Sequence
 
 from desdeo.tools.message import (
@@ -52,7 +51,7 @@ class BaseTerminator(Subscriber):
     @property
     def interested_topics(self):
         """Return the message topics that the terminator is interested in."""
-        return [EvaluatorMessageTopics.NEW_EVALUATIONS, GeneratorMessageTopics.NEW_EVALUATIONS]
+        return [EvaluatorMessageTopics.NEW_EVALUATIONS]
 
     def __init__(self, publisher: Publisher):
         """Initialize a termination criterion."""
@@ -112,7 +111,7 @@ class BaseTerminator(Subscriber):
         """
         if not isinstance(message, IntMessage):
             return
-        if not (isinstance(message.topic, EvaluatorMessageTopics) or isinstance(message.topic, GeneratorMessageTopics)):
+        if not (isinstance(message.topic, (EvaluatorMessageTopics, GeneratorMessageTopics))):
             return
         if (
             message.topic == EvaluatorMessageTopics.NEW_EVALUATIONS  # NOQA: PLR1714

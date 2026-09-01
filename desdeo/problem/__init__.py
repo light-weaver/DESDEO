@@ -18,6 +18,8 @@ __all__ = [
     "Problem",
     "PyomoEvaluator",
     "ScalarizationFunction",
+    "Scenario",
+    "ScenarioModel",
     "Simulator",
     "SimulatorEvaluator",
     "SympyEvaluator",
@@ -30,6 +32,7 @@ __all__ = [
     "VariableDomainTypeEnum",
     "VariableType",
     "VariableTypeEnum",
+    "add_soft_constraint",
     "flatten_variable_dict",
     "get_ideal_dict",
     "get_nadir_dict",
@@ -52,6 +55,7 @@ from .gurobipy_evaluator import GurobipyEvaluator
 from .infix_parser import InfixExpressionParser
 from .json_parser import FormatEnum, MathParser
 from .pyomo_evaluator import PyomoEvaluator
+from .scenario import Scenario, ScenarioModel
 from .schema import (
     Constant,
     Constraint,
@@ -75,6 +79,7 @@ from .schema import (
 from .simulator_evaluator import SimulatorEvaluator
 from .sympy_evaluator import SympyEvaluator
 from .utils import (
+    add_soft_constraint,
     flatten_variable_dict,
     get_ideal_dict,
     get_nadir_dict,
@@ -83,3 +88,5 @@ from .utils import (
     tensor_constant_from_dataframe,
     unflatten_variable_array,
 )
+
+ScenarioModel.model_rebuild()

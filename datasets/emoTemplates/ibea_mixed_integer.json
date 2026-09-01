@@ -1,0 +1,40 @@
+{
+    "preference": null,
+    "template": {
+        "crossover": {
+            "name": "UniformMixedIntegerCrossover"
+        },
+        "mutation": {
+            "name": "MixedIntegerRandomMutation",
+            "mutation_probability": null
+        },
+        "selection": {
+            "name": "IBEASelector",
+            "population_size": 100,
+            "kappa": 0.05,
+            "binary_indicator": "eps"
+        },
+        "termination": {
+            "name": "MaxGenerationsTerminator",
+            "max_generations": 100
+        },
+        "generator": {
+            "n_points": 100,
+            "seed": null,
+            "name": "RandomMixedIntegerGenerator"
+        },
+        "repair": {
+            "name": "NoRepair"
+        },
+        "use_archive": true,
+        "seed": 42,
+        "verbosity": 2,
+        "algorithm_name": "IBEA_Mixed_Integer",
+        "name": "Template2",
+        "mate_selection": {
+            "name": "TournamentSelection",
+            "tournament_size": 2,
+            "winner_size": 100
+        }
+    }
+}

@@ -6,7 +6,7 @@ from types import UnionType
 from typing import TYPE_CHECKING
 
 from fastapi import UploadFile
-from pydantic import BaseModel, ConfigDict, create_model
+from pydantic import BaseModel, ConfigDict, create_model, field_validator
 from sqlalchemy.types import JSON, String, TypeDecorator
 from sqlmodel import Column, Field, Relationship, SQLModel
 
@@ -27,6 +27,7 @@ from desdeo.problem.schema import (
     Variable,
     VariableDomainTypeEnum,
     VariableType,
+    parse_infix_to_func,
 )
 from desdeo.tools.utils import available_solvers
 
@@ -34,6 +35,7 @@ if TYPE_CHECKING:
     from .archive import UserSavedSolutionDB
     from .generic_states import StateDB
     from .preference import PreferenceDB
+    from .scenario import ScenarioModelDB
     from .user import User
 
 
@@ -48,7 +50,6 @@ class ProblemBase(SQLModel):
     is_convex: bool | None = Field(nullable=True, default=None)
     is_linear: bool | None = Field(nullable=True, default=None)
     is_twice_differentiable: bool | None = Field(nullable=True, default=None)
-    scenario_keys: list[str] | None = Field(sa_column=Column(JSON, nullable=True), default=None)
     variable_domain: VariableDomainTypeEnum | None = Field()
 
 
@@ -104,7 +105,6 @@ class ProblemInfo(ProblemBase):
     is_convex: bool | None
     is_linear: bool | None
     is_twice_differentiable: bool | None
-    scenario_keys: list[str] | None
     variable_domain: VariableDomainTypeEnum
 
     constants: list["ConstantDB"] | None
@@ -132,7 +132,6 @@ class ProblemInfoSmall(ProblemBase):
     is_convex: bool | None
     is_linear: bool | None
     is_twice_differentiable: bool | None
-    scenario_keys: list[str] | None
     variable_domain: VariableDomainTypeEnum
 
     problem_metadata: "ProblemMetaDataPublic | None"
@@ -153,7 +152,6 @@ class ProblemDB(ProblemBase, table=True):
     is_convex: bool | None = Field(nullable=True, default=None)
     is_linear: bool | None = Field(nullable=True, default=None)
     is_twice_differentiable: bool | None = Field(nullable=True, default=None)
-    scenario_keys: list[str] | None = Field(sa_column=Column(JSON, nullable=True), default=None)
     variable_domain: VariableDomainTypeEnum = Field()
 
     # Variant tracking
@@ -178,6 +176,7 @@ class ProblemDB(ProblemBase, table=True):
     discrete_representation: "DiscreteRepresentationDB" = Relationship(back_populates="problem", cascade_delete=True)
     simulators: list["SimulatorDB"] = Relationship(back_populates="problem", cascade_delete=True)
     problem_metadata: "ProblemMetaDataDB" = Relationship(back_populates="problem", cascade_delete=True)
+    scenario_models: list["ScenarioModelDB"] = Relationship(back_populates="base_problem")
 
     @classmethod
     def from_problem(cls, problem_instance: Problem, user: "User") -> "ProblemDB":
@@ -211,7 +210,6 @@ class ProblemDB(ProblemBase, table=True):
             is_linear=problem_instance.is_linear_,
             is_twice_differentiable=problem_instance.is_twice_differentiable_,
             variable_domain=problem_instance.variable_domain,
-            scenario_keys=problem_instance.scenario_keys,
             constants=[ConstantDB.model_validate(const) for const in scalar_constants],
             tensor_constants=[TensorConstantDB.model_validate(const) for const in tensor_constants],
             variables=[VariableDB.model_validate(var) for var in scalar_variables],
@@ -346,6 +344,42 @@ class SiteSelectionMetaData(SQLModel, table=True):
     metadata_instance: "ProblemMetaDataDB" = Relationship(back_populates="site_selection_metadata")
 
 
+class DescriptionPart(BaseModel):
+    """A single part of a solution description template.
+
+    A part is either a static text string or a computed value derived from solver results.
+    Exactly one of `text`, `symbol`, or `expression` should be set.
+
+    - `text`: included verbatim in the output.
+    - `symbol`: looks up a key from `optimal_variables` or `optimal_objectives`.
+    - `expression`: a MathJSON expression evaluated against the solver result values.
+
+    When `symbol` or `expression` is used, `label` is prepended and `suffix` is appended.
+    `format_spec` is a Python format spec string (e.g. `".0f"`, `".2f"`) applied to the value.
+    """
+
+    text: str | None = None
+    label: str | None = None
+    symbol: str | None = None
+    expression: list | None = None
+    format_spec: str | None = None
+    suffix: str | None = None
+
+
+class SolutionDescriptionMetaData(SQLModel, table=True):
+    """Metadata for generating a human-readable description of a solution."""
+
+    id: int | None = Field(primary_key=True, default=None)
+    metadata_id: int | None = Field(foreign_key="problemmetadatadb.id", default=None)
+
+    metadata_type: str = "solution_description_metadata"
+
+    parts: list[DescriptionPart] = Field(sa_column=Column(JSON))
+    separator: str = Field(default="\n")
+
+    metadata_instance: "ProblemMetaDataDB" = Relationship(back_populates="solution_description_metadata")
+
+
 class ProblemMetaDataDB(SQLModel, table=True):
     """Store Problem MetaData to DB with this class."""
 
@@ -362,13 +396,20 @@ class ProblemMetaDataDB(SQLModel, table=True):
     site_selection_metadata: list[SiteSelectionMetaData] = Relationship(
         back_populates="metadata_instance", cascade_delete=True
     )
+    solution_description_metadata: list[SolutionDescriptionMetaData] = Relationship(
+        back_populates="metadata_instance", cascade_delete=True
+    )
     problem: ProblemDB = Relationship(back_populates="problem_metadata")
 
     @property
     def all_metadata(
         self,
     ) -> list[
-        ForestProblemMetaData | RepresentativeNonDominatedSolutions | SolverSelectionMetadata | SiteSelectionMetaData
+        ForestProblemMetaData
+        | RepresentativeNonDominatedSolutions
+        | SolverSelectionMetadata
+        | SiteSelectionMetaData
+        | SolutionDescriptionMetaData
     ]:
         """Return all metadata in one list."""
         return (
@@ -376,6 +417,7 @@ class ProblemMetaDataDB(SQLModel, table=True):
             + (self.representative_nd_metadata or [])
             + (self.solver_selection_metadata or [])
             + (self.site_selection_metadata or [])
+            + (self.solution_description_metadata or [])
         )
 
 
@@ -387,6 +429,7 @@ class ProblemMetaDataPublic(SQLModel):
     forest_metadata: list[ForestProblemMetaData] | None
     representative_nd_metadata: list[RepresentativeNonDominatedSolutions] | None
     site_selection_metadata: list[SiteSelectionMetaData] | None
+    solution_description_metadata: list[SolutionDescriptionMetaData] | None
 
 
 class ProblemMetaDataGetRequest(SQLModel):
@@ -544,9 +587,11 @@ class TensorConstantDB(_BaseTensorConstantDB, table=True):
 
     id: int | None = Field(primary_key=True, default=None)
     problem_id: int | None = Field(default=None, foreign_key="problemdb.id")
+    scenario_model_id: int | None = Field(default=None, foreign_key="scenariomodeldb.id")
 
     # Back populates
     problem: ProblemDB | None = Relationship(back_populates="tensor_constants")
+    scenario_model: "ScenarioModelDB" = Relationship(back_populates="tensor_constants")
 
 
 _ConstantDB = from_pydantic(Constant, "_ConstantDB", union_type_conversions={VariableType: float})
@@ -557,9 +602,11 @@ class ConstantDB(_ConstantDB, table=True):
 
     id: int | None = Field(primary_key=True, default=None)
     problem_id: int | None = Field(foreign_key="problemdb.id", default=None)
+    scenario_model_id: int | None = Field(foreign_key="scenariomodeldb.id", default=None)
 
     # Back populates
     problem: ProblemDB | None = Relationship(back_populates="constants")
+    scenario_model: "ScenarioModelDB" = Relationship(back_populates="constants")
 
 
 _VariableDB = from_pydantic(
@@ -574,9 +621,11 @@ class VariableDB(_VariableDB, table=True):
 
     id: int | None = Field(primary_key=True, default=None)
     problem_id: int | None = Field(foreign_key="problemdb.id", default=None)
+    scenario_model_id: int | None = Field(foreign_key="scenariomodeldb.id", default=None)
 
     # Back populates
     problem: ProblemDB | None = Relationship(back_populates="variables")
+    scenario_model: "ScenarioModelDB" = Relationship(back_populates="variables")
 
 
 class _TensorVariable(SQLModel):
@@ -601,16 +650,17 @@ class TensorVariableDB(_TensorVariableDB, table=True):
 
     id: int | None = Field(primary_key=True, default=None)
     problem_id: int | None = Field(foreign_key="problemdb.id", default=None)
+    scenario_model_id: int | None = Field(foreign_key="scenariomodeldb.id", default=None)
 
     # Back populates
     problem: ProblemDB | None = Relationship(back_populates="tensor_variables")
+    scenario_model: "ScenarioModelDB" = Relationship(back_populates="tensor_variables")
 
 
 class _Objective(SQLModel):
     """Helper class to override the fields of nested and list types, and Paths."""
 
     func: list | None = Field(sa_column=Column(JSON, nullable=True))
-    scenario_keys: list[str] | None = Field(sa_column=Column(JSON), default=None)
     surrogates: list[Path] | None = Field(sa_column=Column(PathOrUrlListType), default=None)
     simulator_path: Path | Url | None = Field(sa_column=Column(PathOrUrlType), default=None)
 
@@ -632,18 +682,21 @@ class ObjectiveDB(_ObjectiveDB, table=True):
 
     id: int | None = Field(primary_key=True, default=None)
     problem_id: int | None = Field(foreign_key="problemdb.id", default=None)
+    scenario_model_id: int | None = Field(foreign_key="scenariomodeldb.id", default=None)
 
     # Back populates
     problem: ProblemDB | None = Relationship(back_populates="objectives")
+    scenario_model: "ScenarioModelDB" = Relationship(back_populates="objectives")
 
 
 class _Constraint(SQLModel):
     """Helper class to override the fields of nested and list types, and Paths."""
 
     func: list = Field(sa_column=Column(JSON))
-    scenario_keys: list[str] | None = Field(sa_column=Column(JSON), default=None)
     surrogates: list[Path] | None = Field(sa_column=Column(PathOrUrlListType), default=None)
     simulator_path: Path | Url | None = Field(sa_column=Column(PathOrUrlType), default=None)
+
+    _parse_infix_to_func = field_validator("func", mode="before")(parse_infix_to_func)
 
 
 _ConstraintDB = from_pydantic(
@@ -663,16 +716,17 @@ class ConstraintDB(_ConstraintDB, table=True):
 
     id: int | None = Field(primary_key=True, default=None)
     problem_id: int | None = Field(foreign_key="problemdb.id", default=None)
+    scenario_model_id: int | None = Field(foreign_key="scenariomodeldb.id", default=None)
 
     # Back populates
     problem: ProblemDB | None = Relationship(back_populates="constraints")
+    scenario_model: "ScenarioModelDB" = Relationship(back_populates="constraints")
 
 
 class _ScalarizationFunction(SQLModel):
     """Helper class to override the fields of nested and list types, and Paths."""
 
     func: list = Field(sa_column=Column(JSON))
-    scenario_keys: list[str] = Field(sa_column=Column(JSON))
 
 
 _ScalarizationFunctionDB = from_pydantic(
@@ -688,16 +742,17 @@ class ScalarizationFunctionDB(_ScalarizationFunctionDB, table=True):
 
     id: int | None = Field(primary_key=True, default=None)
     problem_id: int | None = Field(foreign_key="problemdb.id", default=None)
+    scenario_model_id: int | None = Field(foreign_key="scenariomodeldb.id", default=None)
 
     # Back populates
     problem: ProblemDB | None = Relationship(back_populates="scalarization_funcs")
+    scenario_model: "ScenarioModelDB" = Relationship(back_populates="scalarization_funcs")
 
 
 class _ExtraFunction(SQLModel):
     """Helper class to override the fields of nested and list types, and Paths."""
 
     func: list = Field(sa_column=Column(JSON))
-    scenario_keys: list[str] | None = Field(sa_column=Column(JSON), default=None)
     surrogates: list[Path] | None = Field(sa_column=Column(PathOrUrlListType), default=None)
     simulator_path: Path | Url | None = Field(sa_column=Column(PathOrUrlType), default=None)
 
@@ -718,9 +773,11 @@ class ExtraFunctionDB(_ExtraFunctionDB, table=True):
 
     id: int | None = Field(primary_key=True, default=None)
     problem_id: int | None = Field(foreign_key="problemdb.id", default=None)
+    scenario_model_id: int | None = Field(foreign_key="scenariomodeldb.id", default=None)
 
     # Back populates
     problem: ProblemDB | None = Relationship(back_populates="extra_funcs")
+    scenario_model: "ScenarioModelDB" = Relationship(back_populates="extra_funcs")
 
 
 class _DiscreteRepresentation(SQLModel):

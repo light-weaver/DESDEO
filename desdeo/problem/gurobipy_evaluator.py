@@ -75,13 +75,13 @@ class GurobipyEvaluator:
         # Add objective function expressions
         self.objective_functions = self.init_objectives(problem)
 
-        # Add constraints, if any
-        if problem.constraints is not None:
-            self.constraints = self.init_constraints(problem)
-
         # Add scalarization functions, if any
         if problem.scalarization_funcs is not None:
             self.scalarizations = self.init_scalarizations(problem)
+
+        # Add constraints, if any
+        if problem.constraints is not None:
+            self.constraints = self.init_constraints(problem)
 
         self.problem = problem
 
@@ -263,16 +263,16 @@ class GurobipyEvaluator:
             objective_functions[obj.symbol] = gp_expr
 
             # the obj.symbol_min objectives are used when optimizing and building scalarizations etc...
-            objective_functions[f"{obj.symbol}_min"] = -gp_expr if obj.maximize else gp_expr
+            objective_functions[f"{obj.symbol}_min"] = -(gp_expr) if obj.maximize else gp_expr
 
         return objective_functions
 
-    def init_constraints(self, problem: Problem) -> gp.Model:
+    def init_constraints(self, problem: Problem, model: gp.Model | None = None) -> gp.Model:
         """Add constraint expressions to a Gurobipy Model.
 
         Args:
             problem (Problem): the problem from which to extract the constraint function expressions.
-            model (GurobipyModel): the GurobipyModel to add the exprssions to.
+            model (GurobipyModel | None): the GurobipyModel to add the expressions to.
 
         Raises:
             GurobipyEvaluatorError: when an unsupported constraint type is encountered.
@@ -368,7 +368,7 @@ class GurobipyEvaluator:
             warnings.warn(
                 "One or more of the problem objectives seems to be a constant.", GurobipyEvaluatorWarning, stacklevel=2
             )
-        if isinstance(gp.GenExpr, int):
+        if isinstance(gp_expr, gp.GenExpr):
             msg = f"Gurobi does not support objective functions that are not linear or quadratic {gp_expr}"
             raise GurobipyEvaluatorError(msg)
 
@@ -531,7 +531,16 @@ class GurobipyEvaluator:
 
         if self.problem.constraints is not None:
             for const in self.problem.constraints:
-                result_dict[const.symbol] = -self.constraints[const.symbol].getAttr("Slack")
+                con = self.constraints[const.symbol]
+                if isinstance(con, gp.MQConstr):
+                    slack = con.QCSlack
+                    result_dict[const.symbol] = (-np.array(slack)).tolist() if hasattr(slack, "__len__") else -slack
+                elif isinstance(con, gp.MConstr):
+                    result_dict[const.symbol] = (-con.Slack).tolist()
+                elif isinstance(con, gp.QConstr):
+                    result_dict[const.symbol] = -con.getAttr("QCSlack")
+                else:
+                    result_dict[const.symbol] = -con.getAttr("Slack")
 
         if self.problem.scalarization_funcs is not None:
             for scal in self.problem.scalarization_funcs:
@@ -572,7 +581,7 @@ class GurobipyEvaluator:
 
         Args:
             target (str): an str representing a symbol. Needs to match an objective function or scalarization
-            function already found in the model.
+                function already found in the model.
             maximize (bool): If true, the target function is maximized instead of minimized
 
         Raises:

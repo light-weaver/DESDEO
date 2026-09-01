@@ -123,7 +123,7 @@ def find_compatible_solvers(problem: Problem) -> list[BaseSolver]:
     if (
         problem.is_twice_differentiable
         and shutil.which("ipopt")
-        and problem.variable_domain in [VariableDomainTypeEnum.continuous]
+        and problem.variable_domain == VariableDomainTypeEnum.continuous
     ):
         solvers.append(available_solvers["pyomo_ipopt"]["constructor"])  # ipopt has to be installed
 
@@ -196,7 +196,7 @@ def guess_best_solver(problem: Problem) -> BaseSolver:
         if (
             problem.is_twice_differentiable
             and shutil.which("ipopt")
-            and problem.variable_domain in [VariableDomainTypeEnum.continuous]
+            and problem.variable_domain == VariableDomainTypeEnum.continuous
         ):
             return available_solvers["pyomo_ipopt"]["constructor"]
 
@@ -229,7 +229,7 @@ def guess_best_solver(problem: Problem) -> BaseSolver:
     if (
         problem.is_twice_differentiable
         and shutil.which("ipopt")
-        and problem.variable_domain in [VariableDomainTypeEnum.continuous]
+        and problem.variable_domain == VariableDomainTypeEnum.continuous
     ):
         return available_solvers["pyomo_ipopt"]["constructor"]
 
@@ -380,6 +380,8 @@ def repair(lower_bounds: dict[str, float], upper_bounds: dict[str, float]) -> Ca
     """Repairs the offspring by clipping the values to be within the specified bounds.
 
     Useful in evolutionary algorithms where offspring may go out of bounds due to crossover or mutation operations.
+    This also fills any NaN values with the mean of the lower and upper bounds for that variable. Certain operators are
+    known to produce NaN values, e.g., the Bounded Exponential Crossover operator.
 
     Args:
         lower_bounds (dict[str, float]): The lower bounds for each variable.
@@ -391,9 +393,33 @@ def repair(lower_bounds: dict[str, float], upper_bounds: dict[str, float]) -> Ca
 
     def actual_repair(offspring: pl.DataFrame) -> pl.DataFrame:
         for var in offspring.columns:
+            mean = (upper_bounds[var] + lower_bounds[var]) / 2
             offspring = offspring.with_columns(
-                pl.col(var).clip(lower_bound=lower_bounds[var], upper_bound=upper_bounds[var])
+                pl.col(var).clip(lower_bound=lower_bounds[var], upper_bound=upper_bounds[var]).fill_nan(mean)
             )
         return offspring
 
-    return actual_repair
+    # The original code seemed too slow when offsprings were created one at a time?
+    # This is just a quick fix.
+    def fast_actual_repair(offspring: pl.DataFrame) -> pl.DataFrame:
+        # Convert the DataFrame to a NumPy array for faster operations
+        columns = upper_bounds.keys()
+        offspring_np = offspring[list(columns)].to_numpy()
+
+        # Create arrays for lower and upper bounds
+        lower_bounds_np = np.array([lower_bounds[var] for var in offspring.columns])
+        upper_bounds_np = np.array([upper_bounds[var] for var in offspring.columns])
+
+        # Clip the values to be within the specified bounds
+        offspring_np = np.clip(offspring_np, lower_bounds_np, upper_bounds_np)
+
+        # Fill NaN values with the mean of the lower and upper bounds
+        means = (upper_bounds_np + lower_bounds_np) / 2
+        nan_mask = np.isnan(offspring_np)
+        offspring_np[nan_mask] = np.take(means, np.where(nan_mask)[1])
+
+        # Convert back to a DataFrame
+        offspring[list(columns)] = pl.DataFrame(offspring_np, schema=columns)
+        return offspring
+
+    return fast_actual_repair

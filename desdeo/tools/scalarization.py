@@ -320,8 +320,8 @@ def add_asf_generic_diff(
         name="alpha",
         symbol="_alpha",
         variable_type=VariableTypeEnum.real,
-        lowerbound=-float("Inf"),
-        upperbound=float("Inf"),
+        lowerbound=None,
+        upperbound=None,
         initial_value=1.0,
     )
 
@@ -652,8 +652,8 @@ def add_nimbus_sf_diff(
         name="alpha",
         symbol="_alpha",
         variable_type=VariableTypeEnum.real,
-        lowerbound=-float("Inf"),
-        upperbound=float("Inf"),
+        lowerbound=None,
+        upperbound=None,
         initial_value=1.0,
     )
 
@@ -1084,8 +1084,8 @@ def add_stom_sf_diff(
         name="alpha",
         symbol="_alpha",
         variable_type=VariableTypeEnum.real,
-        lowerbound=-float("Inf"),
-        upperbound=float("Inf"),
+        lowerbound=None,
+        upperbound=None,
         initial_value=1.0,
     )
 
@@ -1320,8 +1320,8 @@ def add_guess_sf_diff(
         name="alpha",
         symbol="_alpha",
         variable_type=VariableTypeEnum.real,
-        lowerbound=-float("Inf"),
-        upperbound=float("Inf"),
+        lowerbound=None,
+        upperbound=None,
         initial_value=1.0,
     )
 
@@ -1589,8 +1589,8 @@ def add_asf_diff(
         name="alpha",
         symbol="_alpha",
         variable_type=VariableTypeEnum.real,
-        lowerbound=-float("Inf"),
-        upperbound=float("Inf"),
+        lowerbound=None,
+        upperbound=None,
         initial_value=1.0,
     )
 
@@ -2033,7 +2033,7 @@ def add_desirability_funcs(
     return problem_, symbols
 
 
-def add_iopis_funcs(  # TODO (@light-weaver): Add docstrings here.
+def add_iopis_funcs(
     problem: Problem,
     reference_point: dict[str, float],
     ideal: dict[str, float] | None = None,
@@ -2041,6 +2041,7 @@ def add_iopis_funcs(  # TODO (@light-weaver): Add docstrings here.
     rho: float = 1e-6,
     delta: float = 1e-6,
 ) -> tuple[Problem, list[str]]:
+    """Add the IOPIS GUESS and STOM scalarization functions to the problem."""
     symbols = ["iopis_guess", "iopis_stom"]
     _problem, _ = add_guess_sf_nondiff(
         problem=problem,

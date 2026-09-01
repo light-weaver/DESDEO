@@ -6,15 +6,28 @@ testing and illustration purposed are defined here.
 
 __all__ = [  # noqa: RUF022
     "binh_and_korn",
+    "car_side_impact",
+    "ctp1",
+    "ctp2",
+    "ctp3",
+    "ctp4",
+    "ctp5",
+    "ctp6",
+    "ctp7",
+    "ctp8",
+    "dtlz1",
     "dtlz2",
+    "dtlz4",
     "forest_problem",
     "forest_problem_discrete",
+    "gaa",
     "mcwb_equilateral_tbeam_problem",
     "mcwb_hollow_rectangular_problem",
     "mcwb_ragsdell1976_problem",
     "mcwb_solid_rectangular_problem",
     "mcwb_square_channel_problem",
     "mcwb_tapered_channel_problem",
+    "metallurgical_application",
     "mixed_variable_dimensions_problem",
     "momip_ti2",
     "momip_ti7",
@@ -25,6 +38,14 @@ __all__ = [  # noqa: RUF022
     "re22",
     "re23",
     "re24",
+    "re31",
+    "re32",
+    "re33",
+    "re34",
+    "re37",
+    "re41",
+    "re42",
+    "re61",
     "river_pollution_problem",
     "river_pollution_problem_discrete",
     "river_pollution_scenario",
@@ -35,6 +56,7 @@ __all__ = [  # noqa: RUF022
     "simple_knapsack",
     "simple_knapsack_vectors",
     "simple_linear_test_problem",
+    "simple_scenario_model",
     "simple_scenario_test_problem",
     "simple_test_problem",
     "simulator_problem",
@@ -43,17 +65,32 @@ __all__ = [  # noqa: RUF022
     "zdt1",
     "zdt2",
     "zdt3",
+    "zdt4",
+    "zdt6",
     "best_cake_problem",
     "dmitry_forest_problem_disc",
+    "generate_solar_profile",
+    "generate_summer_cabin_electricity_data",
+    "summer_cabin_battery_problem",
+    "summer_cabin_battery_problem_split",
+    "summer_cabin_battery_problem_split_scenario",
+    "summer_cabin_battery_robust_ev_problem",
+    "lame_superspheres",
+    "water_management",
+    "vehicle_crashworthiness",
 ]
 
 
 from .binh_and_korn_problem import binh_and_korn
 from .cake_problem import best_cake_problem
+from .car_side_impact_problem import car_side_impact
+from .ctp_problems import ctp1, ctp2, ctp3, ctp4, ctp5, ctp6, ctp7, ctp8
 from .dmitry_forest_problem_discrete import dmitry_forest_problem_disc
-from .dtlz2_problem import dtlz2
+from .dtlz_problems import dtlz1, dtlz2, dtlz4
 from .forest_problem import forest_problem, forest_problem_discrete
+from .gaa_problem import gaa
 from .knapsack_problem import simple_knapsack, simple_knapsack_vectors
+from .lame_superspheres_problem import lame_superspheres
 from .mcwb_problem import (
     mcwb_equilateral_tbeam_problem,
     mcwb_hollow_rectangular_problem,
@@ -62,12 +99,13 @@ from .mcwb_problem import (
     mcwb_square_channel_problem,
     mcwb_tapered_channel_problem,
 )
-from .mixed_variable_dimenrions_problem import mixed_variable_dimensions_problem
+from .metallurgical_application_problem import metallurgical_application
+from .mixed_variable_dimensions_problem import mixed_variable_dimensions_problem
 from .momip_problem import momip_ti2, momip_ti7
 from .multi_valued_constraints import multi_valued_constraint_problem
 from .nimbus_problem import nimbus_test_problem
 from .pareto_navigator_problem import pareto_navigator_test_problem
-from .re_problem import re21, re22, re23, re24
+from .re_problem import re21, re22, re23, re24, re31, re32, re33, re34, re37, re41, re42, re61
 from .river_pollution_problems import (
     river_pollution_problem,
     river_pollution_problem_discrete,
@@ -79,12 +117,20 @@ from .simple_problem import (
     simple_data_problem,
     simple_integer_test_problem,
     simple_linear_test_problem,
+    simple_scenario_model,
     simple_scenario_test_problem,
     simple_test_problem,
 )
 from .simulator_problem import simulator_problem
-from .spanish_sustainability_problem import (
-    spanish_sustainability_problem,
-    spanish_sustainability_problem_discrete,
+from .spanish_sustainability_problem import spanish_sustainability_problem, spanish_sustainability_problem_discrete
+from .summer_cabin_electricity import (
+    generate_solar_profile,
+    generate_summer_cabin_electricity_data,
+    summer_cabin_battery_problem,
+    summer_cabin_battery_problem_split,
+    summer_cabin_battery_problem_split_scenario,
+    summer_cabin_battery_robust_ev_problem,
 )
-from .zdt_problem import zdt1, zdt2, zdt3
+from .vehicle_crashworthiness_problem import vehicle_crashworthiness
+from .water_management_problem import water_management
+from .zdt_problem import zdt1, zdt2, zdt3, zdt4, zdt6

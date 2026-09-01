@@ -6,13 +6,14 @@ TODO:@light-weaver
 
 import warnings
 from abc import abstractmethod
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from enum import StrEnum
 from itertools import combinations
-from typing import Callable, Literal, TypeVar
+from typing import Literal, TypeVar
 
 import numpy as np
 import polars as pl
+from moocore import hv_contributions
 from numba import njit
 from pydantic import BaseModel, ConfigDict, Field
 from scipy.special import comb
@@ -21,6 +22,7 @@ from scipy.stats.qmc import LatinHypercube
 from desdeo.problem import Problem
 from desdeo.tools import get_corrected_ideal_and_nadir
 from desdeo.tools.indicators_binary import self_epsilon
+from desdeo.tools.indicators_unary import hv
 from desdeo.tools.message import (
     Array2DMessage,
     DictMessage,
@@ -30,10 +32,29 @@ from desdeo.tools.message import (
     SelectorMessageTopics,
     TerminatorMessageTopics,
 )
-from desdeo.tools.non_dominated_sorting import fast_non_dominated_sort
+from desdeo.tools.non_dominated_sorting import fast_non_dominated_sort, fast_non_dominated_sort_indices
 from desdeo.tools.patterns import Publisher, Subscriber
+from desdeo.tools.reference_vectors import create_s_energy
 
 SolutionType = TypeVar("SolutionType", list, pl.DataFrame)
+
+
+def total_constraint_violation(outputs: pl.DataFrame, constraint_symbols: Sequence[str] | None) -> np.ndarray | None:
+    """Sum each solution's constraint violations, following DESDEO's positive-means-violated convention.
+
+    Args:
+        outputs (pl.DataFrame): The objective values, targets, and constraint values of a population.
+        constraint_symbols (Sequence[str] | None): The constraint columns to read, or None for an
+            unconstrained problem.
+
+    Returns:
+        np.ndarray | None: A 1-D array of total violations, one per row, zero where feasible. None if
+            the problem has no constraints, which lets callers keep the unconstrained code path.
+    """
+    if not constraint_symbols:
+        return None
+    values = outputs[list(constraint_symbols)].to_numpy()
+    return np.maximum(values, 0.0).sum(axis=1)
 
 
 class BaseSelector(Subscriber):
@@ -111,7 +132,7 @@ class ReferenceVectorOptions(BaseModel):
     """The method for normalizing the reference vectors. Defaults to "spherical"."""
     lattice_resolution: int | None = None
     """Number of divisions along an axis when creating the simplex lattice. This is not required/used for the "s_energy"
-    method. If not specified, the lattice resolution is calculated based on the `number_of_vectors`. If "spherical" is 
+    method. If not specified, the lattice resolution is calculated based on the `number_of_vectors`. If "spherical" is
     selected as the `vector_type`, this value overrides the `number_of_vectors`.
     """
     number_of_vectors: int = 200
@@ -144,6 +165,16 @@ class BaseDecompositionSelector(BaseSelector):
         invert_reference_vectors: bool = False,
         seed: int = 0,
     ):
+        """Initialize the base decomposition based selector.
+
+        Args:
+            problem (Problem): the problem being solved.
+            reference_vector_options (ReferenceVectorOptions): options for creating and adapting the reference vectors.
+            verbosity (int): the verbosity level of the operator.
+            publisher (Publisher): the publisher used to communicate with other operators.
+            invert_reference_vectors (bool, optional): whether to invert the reference vectors. Defaults to False.
+            seed (int, optional): the random seed. Defaults to 0.
+        """
         super().__init__(problem, verbosity=verbosity, publisher=publisher, seed=seed)
         self.reference_vector_options = reference_vector_options
         self.invert_reference_vectors = invert_reference_vectors
@@ -151,9 +182,9 @@ class BaseDecompositionSelector(BaseSelector):
         self.reference_vectors_initial: np.ndarray
 
         if self.reference_vector_options.creation_type == "s_energy":
-            raise NotImplementedError("Riesz s-energy criterion is not yet implemented.")
-
-        self._create_simplex()
+            self._create_s_energy()
+        else:
+            self._create_simplex()
 
         if self.reference_vector_options.reference_point:
             corrected_rp = np.array(
@@ -199,6 +230,23 @@ class BaseDecompositionSelector(BaseSelector):
             self.interactive_adapt_4(
                 corrected_ranges,
             )
+
+    def _create_s_energy(self):
+        """Create the reference vectors by minimizing the Riesz s-energy.
+
+        Unlike the simplex lattice, this honours `number_of_vectors` exactly, so the population size
+        of a decomposition-based algorithm can be chosen freely rather than being rounded down to the
+        nearest binomial count. `lattice_resolution` is not meaningful here and is left untouched.
+        """
+        vectors = create_s_energy(
+            number_of_objectives=self.num_dims,
+            number_of_vectors=self.reference_vector_options.number_of_vectors,
+            seed=self.seed,
+        )
+        # `invert_reference_vectors` mirrors the simplex branch, where it exists for NSGA-III.
+        self.reference_vectors = vectors if not self.invert_reference_vectors else 1 - vectors
+        self.reference_vectors_initial = np.copy(self.reference_vectors)
+        self._normalize_rvs()
 
     def _create_simplex(self):
         """Create the reference vectors using simplex lattice design."""
@@ -261,10 +309,9 @@ class BaseDecompositionSelector(BaseSelector):
                 norm = np.sum(self.reference_vectors, axis=1).reshape(-1, 1)
                 self.reference_vectors = np.divide(self.reference_vectors, norm)
                 return
-            else:
-                norm = np.sum(1 - self.reference_vectors, axis=1).reshape(-1, 1)
-                self.reference_vectors = 1 - np.divide(1 - self.reference_vectors, norm)
-                return
+            norm = np.sum(1 - self.reference_vectors, axis=1).reshape(-1, 1)
+            self.reference_vectors = 1 - np.divide(1 - self.reference_vectors, norm)
+            return
         # Not needed due to pydantic validation
         raise ValueError("Invalid vector type. Must be either 'spherical' or 'planar'.")
 
@@ -292,8 +339,8 @@ class BaseDecompositionSelector(BaseSelector):
         self._normalize_rvs()
         self.add_edge_vectors()
 
-    def interactive_adapt_2(self, z: np.ndarray, predefined_distance: float, ord: int) -> None:
-        """Adapt reference vectors by using the information about non-preferred solution(s) selected by the Decision maker.
+    def interactive_adapt_2(self, z: np.ndarray, predefined_distance: float, norm_order: int) -> None:
+        """Adapt reference vectors using information about non-preferred solution(s) from the Decision maker.
 
         After the Decision maker has specified non-preferred solution(s), Euclidian distance between normalized solution
         vector(s) and each of the reference vectors are calculated. Those reference vectors that are **closer** than a
@@ -315,26 +362,18 @@ class BaseDecompositionSelector(BaseSelector):
             z (np.ndarray): Non-preferred solution(s).
             predefined_distance (float): The reference vectors that are closer than this distance are either removed or
                 re-positioned somewhere else. Default value: 0.2
-            ord (int): Order of the norm. Default is 2, i.e., Euclidian distance.
+            norm_order (int): Order of the norm. Default is 2, i.e., Euclidian distance.
         """
         # calculate L1 norm of non-preferred solution(s)
         z = np.atleast_2d(z)
-        norm = np.linalg.norm(z, ord=ord, axis=1).reshape(np.shape(z)[0], 1)
+        norm = np.linalg.norm(z, ord=norm_order, axis=1).reshape(np.shape(z)[0], 1)
 
         # non-preferred solutions normalized
         v_c = np.divide(z, norm)
 
         # distances from non-preferred solution(s) to each reference vector
         distances = np.array(
-            [
-                list(
-                    map(
-                        lambda solution: np.linalg.norm(solution - value, ord=2),
-                        v_c,
-                    )
-                )
-                for value in self.reference_vectors
-            ]
+            [[np.linalg.norm(solution - value, ord=2) for solution in v_c] for value in self.reference_vectors]
         )
 
         # find out reference vectors that are not closer than threshold value to any non-preferred solution
@@ -370,7 +409,7 @@ class BaseDecompositionSelector(BaseSelector):
         self.add_edge_vectors()
 
     def interactive_adapt_4(self, preferred_ranges: np.ndarray) -> None:
-        """Adapt reference vectors by using the information about the Decision maker's preferred range for each of the objective.
+        """Adapt reference vectors using the Decision maker's preferred range for each objective.
 
         Using these ranges, Latin hypercube sampling is applied to generate m number of samples between
         within these ranges, where m is the number of reference vectors. Normalized vectors constructed of these samples
@@ -463,7 +502,12 @@ def _rvea_selection(
             if apd < min_apd:
                 min_apd = apd
                 select = i
-        selection[select] = True
+        # A reference vector with no associated solution leaves select at -1. Guarding here is
+        # essential: selection[-1] = True would silently promote the *last* individual in the array,
+        # once per empty vector. Empty vectors are common, and become commoner as the number of
+        # objectives grows, so the unguarded write biases selection exactly where RVEA is used most.
+        if select != -1:
+            selection[select] = True
 
     return selection, apd_fitness
 
@@ -532,15 +576,21 @@ def _rvea_selection_constrained(
                 select_violation = i
         if select != -1:
             selection[select] = True
-        else:
+        elif select_violation != -1:
+            # Guarding this branch matters as much as the one above: a reference vector with no
+            # associated solution at all leaves both indices at -1, and selection[-1] = True would
+            # silently promote the last individual in the array, once per empty vector.
             selection[select_violation] = True
 
     return selection, apd_fitness
 
 
 class RVEASelector(BaseDecompositionSelector):
+    """Reference Vector Guided Evolutionary Algorithm (RVEA) selection operator."""
+
     @property
     def provided_topics(self):
+        """The message topics this operator publishes, keyed by verbosity level."""
         return {
             0: [],
             1: [
@@ -555,6 +605,7 @@ class RVEASelector(BaseDecompositionSelector):
 
     @property
     def interested_topics(self):
+        """The message topics this operator subscribes to."""
         return [
             TerminatorMessageTopics.GENERATION,
             TerminatorMessageTopics.MAX_GENERATIONS,
@@ -572,6 +623,7 @@ class RVEASelector(BaseDecompositionSelector):
         reference_vector_options: ReferenceVectorOptions | dict | None = None,
         seed: int = 0,
     ):
+        """Initialize the RVEA selection operator. See the class and base class for argument details."""
         if parameter_adaptation_strategy not in ParameterAdaptationStrategy:
             raise TypeError(f"Parameter adaptation strategy must be of Type {type(ParameterAdaptationStrategy)}")
         if parameter_adaptation_strategy == ParameterAdaptationStrategy.OTHER:
@@ -737,6 +789,7 @@ class RVEASelector(BaseDecompositionSelector):
         return
 
     def state(self) -> Sequence[Message]:
+        """Return the operator's state as messages for the current verbosity level."""
         if self.verbosity == 0 or self.selection is None:
             return []
         if self.verbosity == 1:
@@ -769,7 +822,7 @@ class RVEASelector(BaseDecompositionSelector):
                 value=self.selected_targets,
                 source=self.__class__.__name__,
             )
-        state_verbose = [
+        return [
             Array2DMessage(
                 topic=SelectorMessageTopics.REFERENCE_VECTORS,
                 value=self.reference_vectors.tolist(),
@@ -791,7 +844,6 @@ class RVEASelector(BaseDecompositionSelector):
             # ),
             message,
         ]
-        return state_verbose
 
     def _adapt(self):
         self.adapted_reference_vectors = self.reference_vectors
@@ -850,6 +902,7 @@ class NSGA3Selector(BaseDecompositionSelector):
 
     @property
     def provided_topics(self):
+        """The message topics this operator publishes, keyed by verbosity level."""
         return {
             0: [],
             1: [
@@ -864,6 +917,7 @@ class NSGA3Selector(BaseDecompositionSelector):
 
     @property
     def interested_topics(self):
+        """The message topics this operator subscribes to."""
         return []
 
     def __init__(
@@ -881,7 +935,8 @@ class NSGA3Selector(BaseDecompositionSelector):
             problem (Problem): The optimization problem to be solved.
             verbosity (int): The verbosity level of the operator.
             publisher (Publisher): The publisher to use for communication.
-            reference_vector_options (ReferenceVectorOptions | None, optional): Options for the reference vectors. Defaults to None.
+            reference_vector_options (ReferenceVectorOptions | None, optional): Reference vector options.
+                Defaults to None.
             invert_reference_vectors (bool, optional): Whether to invert the reference vectors. Defaults to False.
             seed (int, optional): The random seed to use. Defaults to 0.
         """
@@ -900,8 +955,6 @@ class NSGA3Selector(BaseDecompositionSelector):
             seed=seed,
             invert_reference_vectors=invert_reference_vectors,
         )
-        if self.constraints_symbols is not None:
-            raise NotImplementedError("NSGA3 selector does not support constraints. Please use a different selector.")
 
         self.adapted_reference_vectors = None
         self.worst_fitness: np.ndarray | None = None
@@ -911,7 +964,7 @@ class NSGA3Selector(BaseDecompositionSelector):
         self.selected_individuals: SolutionType | None = None
         self.selected_targets: pl.DataFrame | None = None
 
-    def do(
+    def do(  # NOQA: C901
         self,
         parents: tuple[SolutionType, pl.DataFrame],
         offsprings: tuple[SolutionType, pl.DataFrame],
@@ -935,13 +988,39 @@ class NSGA3Selector(BaseDecompositionSelector):
         else:
             raise TypeError("The decision variables must be either a list or a polars DataFrame, not both")
         alltargets = parents[1].vstack(offsprings[1])
+
+        # Check if there are constraints and filter feasible solutions
+        if self.constraints_symbols is not None and len(self.constraints_symbols) > 0:
+            constraints = alltargets[self.constraints_symbols].to_numpy()
+            constraints = np.where(constraints > 0, constraints, 0)
+            constraints_sum = np.sum(constraints, axis=1)
+            feasible = np.where(constraints_sum == 0)[0].tolist()
+            sorted_infeasible = constraints_sum.argsort().tolist()[len(feasible) :]
+            if len(feasible) <= self.n_survive:
+                # Put all feasible solutions in the selection, then fill the rest with the least constraint violation
+                select = feasible.copy()
+                remaining = self.n_survive - len(select)
+                select += sorted_infeasible[:remaining]
+                self.selection = select
+                if isinstance(solutions, pl.DataFrame) and self.selection is not None:
+                    self.selected_individuals = solutions[self.selection]
+                elif isinstance(solutions, list) and self.selection is not None:
+                    self.selected_individuals = [solutions[i] for i in self.selection]
+                else:
+                    raise RuntimeError("Something went wrong with the selection")
+                self.selected_targets = alltargets[self.selection]
+
+                self.notify()
+                return self.selected_individuals, self.selected_targets
+            # else:
+            # Only consider feasible solutions for selection
+            if isinstance(solutions, pl.DataFrame):
+                solutions = solutions[feasible]
+            elif isinstance(solutions, list):
+                solutions = [solutions[i] for i in feasible]
+            alltargets = alltargets[feasible]
+
         targets = alltargets[self.target_symbols].to_numpy()
-        if self.constraints_symbols is None:
-            constraints = None
-        else:
-            constraints = (
-                parents[1][self.constraints_symbols].vstack(offsprings[1][self.constraints_symbols]).to_numpy()
-            )
         ref_dirs = self.reference_vectors
 
         if self.ideal is None:
@@ -979,17 +1058,24 @@ class NSGA3Selector(BaseDecompositionSelector):
         for front_id in range(len(fronts)):
             if len(np.concatenate(fronts[: front_id + 1])) < self.n_survive:
                 continue
-            else:
-                fronts = fronts[: front_id + 1]
+            fronts = fronts[: front_id + 1]
+            selection = np.concatenate(fronts)
+            break
+        else:
+            # The combined population is smaller than the desired number of survivors
+            # (this happens, e.g., when preferred solutions inflate the number of
+            # reference vectors beyond the population size). Keep all available solutions.
+            if fronts:
                 selection = np.concatenate(fronts)
-                break
-        F = fitness[selection]
+        front_fitness = fitness[selection]
 
         last_front = fronts[-1]
 
         # Selecting individuals from the last acceptable front.
         if len(selection) > self.n_survive:
-            niche_of_individuals, dist_to_niche = self.associate_to_niches(F, ref_dirs, self.ideal, nadir_point)
+            niche_of_individuals, dist_to_niche = self.associate_to_niches(
+                front_fitness, ref_dirs, self.ideal, nadir_point
+            )
             # if there is only one front
             if len(fronts) == 1:
                 n_remaining = self.n_survive
@@ -1004,8 +1090,6 @@ class NSGA3Selector(BaseDecompositionSelector):
                 n_remaining = self.n_survive - len(until_last_front)
 
             last_front_selection_id = list(range(len(until_last_front), len(selection)))
-            if np.any(selection[last_front_selection_id] != last_front):
-                print("error!!!")
             selected_from_last_front = self.niching(
                 fitness[last_front, :],
                 n_remaining,
@@ -1014,10 +1098,6 @@ class NSGA3Selector(BaseDecompositionSelector):
                 dist_to_niche[last_front_selection_id],
             )
             final_selection = np.concatenate((until_last_front, last_front[selected_from_last_front]))
-            if self.extreme_points is None:
-                print("Error")
-            if final_selection is None:
-                print("Error")
         else:
             final_selection = selection
 
@@ -1033,27 +1113,26 @@ class NSGA3Selector(BaseDecompositionSelector):
         self.notify()
         return self.selected_individuals, self.selected_targets
 
-    def get_extreme_points_c(self, F, ideal_point, extreme_points=None):
-        """Taken from pymoo"""
+    def get_extreme_points_c(self, f, ideal_point, extreme_points=None):
+        """Find the extreme points used for normalization (adapted from pymoo)."""
         # calculate the asf which is used for the extreme point decomposition
-        asf = np.eye(F.shape[1])
+        asf = np.eye(f.shape[1])
         asf[asf == 0] = 1e6
 
         # add the old extreme points to never loose them for normalization
-        _F = F
+        all_f = f
         if extreme_points is not None:
-            _F = np.concatenate([extreme_points, _F], axis=0)
+            all_f = np.concatenate([extreme_points, all_f], axis=0)
 
-        # use __F because we substitute small values to be 0
-        __F = _F - ideal_point
-        __F[__F < 1e-3] = 0
+        # translate so that small values are substituted to 0
+        near_zero_tolerance = 1e-3
+        translated_f = all_f - ideal_point
+        translated_f[translated_f < near_zero_tolerance] = 0
 
-        # update the extreme points for the normalization having the highest asf value
-        # each
-        F_asf = np.max(__F * asf[:, None, :], axis=2)
-        I = np.argmin(F_asf, axis=1)
-        extreme_points = _F[I, :]
-        return extreme_points
+        # update the extreme points for the normalization having the highest asf value each
+        f_asf = np.max(translated_f * asf[:, None, :], axis=2)
+        min_idx = np.argmin(f_asf, axis=1)
+        return all_f[min_idx, :]
 
     def get_nadir_point(
         self,
@@ -1063,31 +1142,37 @@ class NSGA3Selector(BaseDecompositionSelector):
         worst_of_front,
         worst_of_population,
     ):
-        LinAlgError = np.linalg.LinAlgError
+        """Estimate the nadir point from the extreme points (adapted from pymoo)."""
+        degenerate_tolerance = 1e-6
         try:
             # find the intercepts using gaussian elimination
-            M = extreme_points - ideal_point
+            coeff_matrix = extreme_points - ideal_point
             b = np.ones(extreme_points.shape[1])
-            plane = np.linalg.solve(M, b)
+            plane = np.linalg.solve(coeff_matrix, b)
             intercepts = 1 / plane
 
             nadir_point = ideal_point + intercepts
 
-            if not np.allclose(np.dot(M, plane), b) or np.any(intercepts <= 1e-6) or np.any(nadir_point > worst_point):
-                raise LinAlgError()
+            if (
+                not np.allclose(np.dot(coeff_matrix, plane), b)
+                or np.any(intercepts <= degenerate_tolerance)
+                or np.any(nadir_point > worst_point)
+            ):
+                raise np.linalg.LinAlgError  # noqa: TRY301
 
-        except LinAlgError:
+        except np.linalg.LinAlgError:
             nadir_point = worst_of_front
 
-        b = nadir_point - ideal_point <= 1e-6
+        b = nadir_point - ideal_point <= degenerate_tolerance
         nadir_point[b] = worst_of_population[b]
         return nadir_point
 
-    def niching(self, F, n_remaining, niche_count, niche_of_individuals, dist_to_niche):
+    def niching(self, f, n_remaining, niche_count, niche_of_individuals, dist_to_niche):
+        """Select survivors from the last front by reference-vector niching (adapted from pymoo)."""
         survivors = []
 
         # boolean array of elements that are considered for each iteration
-        mask = np.full(F.shape[0], True)
+        mask = np.full(f.shape[0], fill_value=True)
 
         while len(survivors) < n_remaining:
             # all niches where new individuals can be assigned to
@@ -1105,11 +1190,8 @@ class NSGA3Selector(BaseDecompositionSelector):
             # shuffle to break random tie (equal perp. dist) or select randomly
             self.rng.shuffle(next_ind)
 
-            if niche_count[next_niche] == 0:
-                next_ind = next_ind[np.argmin(dist_to_niche[next_ind])]
-            else:
-                # already randomized through shuffling
-                next_ind = next_ind[0]
+            # if the niche is empty, take the closest individual; otherwise take a random one (already shuffled)
+            next_ind = next_ind[np.argmin(dist_to_niche[next_ind])] if niche_count[next_niche] == 0 else next_ind[0]
 
             mask[next_ind] = False
             survivors.append(int(next_ind))
@@ -1118,46 +1200,47 @@ class NSGA3Selector(BaseDecompositionSelector):
 
         return survivors
 
-    def associate_to_niches(self, F, ref_dirs, ideal_point, nadir_point, utopian_epsilon=0.0):
+    def associate_to_niches(self, f, ref_dirs, ideal_point, nadir_point, utopian_epsilon=0.0):
+        """Associate each solution with its closest reference vector (adapted from pymoo)."""
         utopian_point = ideal_point - utopian_epsilon
 
         denom = nadir_point - utopian_point
         denom[denom == 0] = 1e-12
 
         # normalize by ideal point and intercepts
-        N = (F - utopian_point) / denom
-        # dist_matrix = self.calc_perpendicular_distance(N, ref_dirs)
-        dist_matrix = jitted_calc_perpendicular_distance(N, ref_dirs, self.invert_reference_vectors)
+        normalized = (f - utopian_point) / denom
+        dist_matrix = jitted_calc_perpendicular_distance(normalized, ref_dirs, self.invert_reference_vectors)
 
         niche_of_individuals = np.argmin(dist_matrix, axis=1)
-        dist_to_niche = dist_matrix[np.arange(F.shape[0]), niche_of_individuals]
+        dist_to_niche = dist_matrix[np.arange(f.shape[0]), niche_of_individuals]
 
         return niche_of_individuals, dist_to_niche
 
     def calc_niche_count(self, n_niches, niche_of_individuals):
+        """Count how many of the given individuals are assigned to each niche."""
         niche_count = np.zeros(n_niches, dtype=int)
         index, count = np.unique(niche_of_individuals, return_counts=True)
         niche_count[index] = count
         return niche_count
 
-    def calc_perpendicular_distance(self, N, ref_dirs):
+    def calc_perpendicular_distance(self, normalized, ref_dirs):
+        """Compute the perpendicular distance from each normalized solution to each reference direction."""
         if self.invert_reference_vectors:
-            u = np.tile(-ref_dirs, (len(N), 1))
-            v = np.repeat(1 - N, len(ref_dirs), axis=0)
+            u = np.tile(-ref_dirs, (len(normalized), 1))
+            v = np.repeat(1 - normalized, len(ref_dirs), axis=0)
         else:
-            u = np.tile(ref_dirs, (len(N), 1))
-            v = np.repeat(N, len(ref_dirs), axis=0)
+            u = np.tile(ref_dirs, (len(normalized), 1))
+            v = np.repeat(normalized, len(ref_dirs), axis=0)
 
         norm_u = np.linalg.norm(u, axis=1)
 
         scalar_proj = np.sum(v * u, axis=1) / norm_u
         proj = scalar_proj[:, None] * u / norm_u[:, None]
         val = np.linalg.norm(proj - v, axis=1)
-        matrix = np.reshape(val, (len(N), len(ref_dirs)))
-
-        return matrix
+        return np.reshape(val, (len(normalized), len(ref_dirs)))
 
     def state(self) -> Sequence[Message]:
+        """Return the operator's state as messages for the current verbosity level."""
         if self.verbosity == 0 or self.selection is None or self.selected_targets is None:
             return []
         if self.verbosity == 1:
@@ -1192,7 +1275,7 @@ class NSGA3Selector(BaseDecompositionSelector):
                 value=self.selected_targets,
                 source=self.__class__.__name__,
             )
-        state_verbose = [
+        return [
             Array2DMessage(
                 topic=SelectorMessageTopics.REFERENCE_VECTORS,
                 value=self.reference_vectors.tolist(),
@@ -1215,10 +1298,9 @@ class NSGA3Selector(BaseDecompositionSelector):
             # ),
             message,
         ]
-        return state_verbose
 
     def update(self, message: Message) -> None:
-        pass
+        """Handle an incoming message. This operator does not react to messages."""
 
 
 @njit
@@ -1311,6 +1393,12 @@ def _ibea_select_all(fitness_components: np.ndarray, population_size: int, kappa
 class IBEASelector(BaseSelector):
     """The adaptive IBEA selection operator.
 
+    Constraints are handled feasibility-first, as in `NSGA3Selector`: while feasible solutions alone
+    can fill the population the infeasible ones are discarded and the indicator selection runs
+    unchanged, and while they cannot, every feasible solution survives and the remaining places go to
+    the least infeasible. The binary indicator itself is left untouched, since it compares objective
+    vectors and has no reading of an infeasible one.
+
     Reference: Zitzler, E., Künzli, S. (2004). Indicator-Based Selection in Multiobjective Search. In: Yao, X., et al.
     Parallel Problem Solving from Nature - PPSN VIII. PPSN 2004. Lecture Notes in Computer Science, vol 3242.
     Springer, Berlin, Heidelberg. https://doi.org/10.1007/978-3-540-30217-9_84
@@ -1318,6 +1406,7 @@ class IBEASelector(BaseSelector):
 
     @property
     def provided_topics(self):
+        """The message topics this operator publishes, keyed by verbosity level."""
         return {
             0: [],
             1: [SelectorMessageTopics.STATE],
@@ -1326,6 +1415,7 @@ class IBEASelector(BaseSelector):
 
     @property
     def interested_topics(self):
+        """The message topics this operator subscribes to."""
         return []
 
     def __init__(
@@ -1348,6 +1438,7 @@ class IBEASelector(BaseSelector):
             kappa (float, optional): The kappa value for the IBEA selection. Defaults to 0.05.
             binary_indicator (Callable[[np.ndarray], np.ndarray], optional): The binary indicator function to use.
                 Defaults to self_epsilon with uses binary addaptive epsilon indicator.
+            seed (int, optional): The random seed to use. Defaults to 0.
         """
         # TODO(@light-weaver): IBEA doesn't perform as good as expected
         # The distribution of solutions found isn't very uniform
@@ -1361,8 +1452,34 @@ class IBEASelector(BaseSelector):
         self.binary_indicator = binary_indicator
         self.kappa = kappa
         self.population_size = population_size
-        if self.constraints_symbols is not None:
-            raise NotImplementedError("IBEA selector does not support constraints. Please use a different selector.")
+
+    def _indicator_components(self, targets: np.ndarray) -> np.ndarray:
+        """Scale the targets to the unit box and return the pairwise binary indicator matrix."""
+        target_min = np.min(targets, axis=0)
+        target_max = np.max(targets, axis=0)
+        span = target_max - target_min
+        # A target that is constant across the population carries no information; dividing by its
+        # zero span would turn the whole indicator matrix into NaN.
+        span[span == 0] = 1.0
+        return self.binary_indicator((targets - target_min) / span)
+
+    def _infeasible_fitness(self, targets: np.ndarray, violations: np.ndarray) -> np.ndarray:
+        """Fitness for a set that is partly or wholly infeasible, feasible solutions first.
+
+        The binary indicator only orders solutions sensibly when they are all feasible, so the
+        indicator fitness is kept for the feasible members and every infeasible member is placed
+        strictly below all of them, ordered among themselves by total violation. Fitness stays
+        higher-is-better, which is what the mating tournament expects.
+        """
+        components = self._indicator_components(targets)
+        fitness = _ibea_fitness(components, kappa=self.kappa * np.abs(components).max())
+
+        infeasible = violations > 0
+        if not np.any(infeasible):
+            return fitness
+        feasible_worst = fitness[~infeasible].min() if np.any(~infeasible) else 0.0
+        fitness[infeasible] = feasible_worst - violations[infeasible] / violations[infeasible].max()
+        return fitness
 
     def do(
         self, parents: tuple[SolutionType, pl.DataFrame], offsprings: tuple[SolutionType, pl.DataFrame]
@@ -1379,8 +1496,6 @@ class IBEASelector(BaseSelector):
             tuple[SolutionType, pl.DataFrame]: The selected decision variables and their objective values,
                 targets, and constraint violations.
         """
-        if self.constraints_symbols is not None:
-            raise NotImplementedError("IBEA selector does not support constraints. Please use a different selector.")
         if isinstance(parents[0], pl.DataFrame) and isinstance(offsprings[0], pl.DataFrame):
             solutions = parents[0].vstack(offsprings[0])
         elif isinstance(parents[0], list) and isinstance(offsprings[0], list):
@@ -1391,13 +1506,28 @@ class IBEASelector(BaseSelector):
             return parents[0], parents[1]
         alltargets = parents[1].vstack(offsprings[1])
 
+        violations = total_constraint_violation(alltargets, self.constraints_symbols)
+        if violations is not None:
+            feasible = np.flatnonzero(violations <= 0)
+            if len(feasible) <= self.population_size:
+                # Too few feasible solutions to fill the population, so the indicator has nothing to
+                # choose between: keep every feasible solution and top up with the least infeasible.
+                self.selection = np.argsort(violations, kind="stable")[: self.population_size].tolist()
+                self.selected_individuals = solutions[self.selection]
+                self.selected_targets = alltargets[self.selection]
+                self.fitness = self._infeasible_fitness(
+                    self.selected_targets[self.target_symbols].to_numpy(), violations[self.selection]
+                )
+
+                self.notify()
+                return self.selected_individuals, self.selected_targets
+            # Enough feasible solutions to fill the population, so the infeasible ones are simply
+            # dropped and the indicator selection proceeds unchanged on the feasible ones.
+            solutions = solutions[feasible]
+            alltargets = alltargets[feasible]
+
         # Adaptation
-        target_vals = alltargets[self.target_symbols].to_numpy()
-        target_min = np.min(target_vals, axis=0)
-        target_max = np.max(target_vals, axis=0)
-        # Scale the targets to the range [0, 1]
-        target_vals = (target_vals - target_min) / (target_max - target_min)
-        fitness_components = self.binary_indicator(target_vals)
+        fitness_components = self._indicator_components(alltargets[self.target_symbols].to_numpy())
         kappa_mult = np.max(np.abs(fitness_components))
 
         chosen = _ibea_select_all(
@@ -1460,7 +1590,7 @@ class IBEASelector(BaseSelector):
         ]
 
     def update(self, message: Message) -> None:
-        pass
+        """Handle an incoming message. This operator does not react to messages."""
 
 
 @njit
@@ -1504,6 +1634,12 @@ def _nsga2_crowding_distance_assignment(
     crowding_distances = np.zeros(num_vectors)  # I[i]_distance
 
     for m in range(num_objectives):
+        # An objective that is constant across the whole population separates nothing. Sorting by it
+        # gives an arbitrary order, so marking its two ends as boundary points would hand an infinite
+        # distance to two arbitrary solutions, and the normalisation below would divide by zero.
+        if f_maxs[m] == f_mins[m]:
+            continue
+
         # sort by column (objective)
         m_order = vectors[:, m].argsort()
         # inlcude boundary points
@@ -1522,6 +1658,11 @@ class NSGA2Selector(BaseSelector):
 
     Implements the selection operator defined for NSGA2, which included the crowding
     distance calculation.
+
+    On a constrained problem the ranking switches to the constrained domination of the same paper:
+    a feasible solution beats an infeasible one, two infeasible solutions are compared by total
+    constraint violation, and two feasible solutions are compared by ordinary Pareto dominance.
+    Nothing else changes, since that is where NSGA-II confines its constraint handling.
 
     Reference: Deb, K., Pratap, A., Agarwal, S., & Meyarivan, T. A. M. T.
         (2002). A fast and elitist multiobjective genetic algorithm: NSGA-II. IEEE
@@ -1550,17 +1691,53 @@ class NSGA2Selector(BaseSelector):
         population_size: int,
         seed: int = 0,
     ):
+        """Initialize the NSGA-II selection operator.
+
+        Args:
+            problem (Problem): The optimization problem to be solved.
+            verbosity (int): The verbosity level of the operator.
+            publisher (Publisher): The publisher to use for communication.
+            population_size (int): The number of individuals to select each generation.
+            seed (int, optional): The random seed to use. Defaults to 0.
+        """
         super().__init__(problem=problem, verbosity=verbosity, publisher=publisher, seed=seed)
-        if self.constraints_symbols is not None:
-            print(
-                "NSGA2 selector does not currently support constraints. "
-                "Results may vary if used to solve constrainted problems."
-            )
         self.population_size = population_size
         self.seed = seed
         self.selection: list[int] | None = None
         self.selected_individuals: SolutionType | None = None
         self.selected_targets: pl.DataFrame | None = None
+
+    def _sort(self, targets: np.ndarray, violations: np.ndarray | None) -> np.ndarray:
+        """Rank a population into fronts, applying constrained domination when the problem has constraints.
+
+        Constrained domination never compares a feasible solution with an infeasible one on
+        objectives, so the two groups can be ranked separately and concatenated instead of a
+        dominance relation being redefined. The feasible group gets the ordinary non-dominated
+        sort; the infeasible group is stratified by total violation, one front per distinct value,
+        which is what "the one with the smaller violation wins" means as a ranking.
+
+        Everything downstream -- crowding distance, the partial-front trim, the fitness -- is left
+        alone, exactly as in NSGA-II, where constraint handling enters only through the ranking.
+        """
+        if violations is None:
+            return fast_non_dominated_sort(targets)
+
+        feasible = np.flatnonzero(violations <= 0)
+        infeasible = np.flatnonzero(violations > 0)
+        fronts = []
+
+        if feasible.size > 0:
+            for front in fast_non_dominated_sort(targets[feasible]):
+                row = np.zeros(len(targets), dtype=np.bool_)
+                row[feasible[front]] = True
+                fronts.append(row)
+
+        for violation in np.unique(violations[infeasible]):
+            row = np.zeros(len(targets), dtype=np.bool_)
+            row[infeasible[violations[infeasible] == violation]] = True
+            fronts.append(row)
+
+        return np.array(fronts)
 
     def do(
         self, parents: tuple[SolutionType, pl.DataFrame], offsprings: tuple[SolutionType, pl.DataFrame]
@@ -1574,12 +1751,12 @@ class NSGA2Selector(BaseSelector):
         if offsprings[0].is_empty() and offsprings[1].is_empty():
             # just compute non-dominated ranks of population and be done
             parents_a = parents[1][self.target_symbols].to_numpy()
-            fronts = fast_non_dominated_sort(parents_a)
+            fronts = self._sort(parents_a, total_constraint_violation(parents[1], self.constraints_symbols))
 
-            # assign fitness according to non-dom rank (lower better)
+            # assign fitness according to non-dom rank, flipped to higher-is-better and kept
+            # strictly positive for the consumers of SELECTED_FITNESS; see the main branch below
             scores = np.arange(len(fronts))
-            fitness_values = scores @ fronts
-            self.fitness = fitness_values
+            self.fitness = len(fronts) - scores @ fronts
 
             # all selected in first iteration
             self.selection = list(range(len(parents[1])))
@@ -1601,7 +1778,7 @@ class NSGA2Selector(BaseSelector):
         f_mins, f_maxs = np.min(r_targets_arr, axis=0), np.max(r_targets_arr, axis=0)
 
         # Do fast non-dominated sorting on R_t -> F
-        fronts = fast_non_dominated_sort(r_targets_arr)
+        fronts = self._sort(r_targets_arr, total_constraint_violation(r_population, self.constraints_symbols))
         crowding_distances = np.ones(self.population_size) * np.nan
         rankings = np.ones(self.population_size) * np.nan
         fitness_values = np.ones(self.population_size) * np.nan
@@ -1709,7 +1886,15 @@ class NSGA2Selector(BaseSelector):
         solutions = pl.DataFrame(new_parents_solutions, schema=parents[0].schema)
         outputs = pl.DataFrame(new_parents, schema=parents[1].schema)
 
-        self.fitness = fitness_values
+        # Everything downstream of SELECTED_FITNESS reads it as higher-is-better: the mating
+        # tournament takes an argmax, and roulette-wheel selection treats it as a weight, which also
+        # requires it to be positive. The NSGA-II quantity built above is the opposite -- front rank
+        # plus a reversed crowding distance, lower is better -- so publishing it directly made the
+        # binary tournament pick the loser of every pair. Reflecting it about the worst attainable
+        # value flips the direction, keeps every value strictly positive (a front's fitness lies in
+        # `(n_fronts - rank - 1, n_fronts - rank]`, since the reversed distance never reaches 1) and
+        # preserves the ordering exactly.
+        self.fitness = (np.nanmax(rankings) + 1.0) - fitness_values
 
         whole_fronts = fronts[: last_whole_front_idx + 1]
         whole_indices = [np.where(row)[0].tolist() for row in whole_fronts]
@@ -1775,4 +1960,196 @@ class NSGA2Selector(BaseSelector):
         ]
 
     def update(self, message: Message) -> None:
-        pass
+        """Handle an incoming message. This operator does not react to messages."""
+
+
+class SMSEMOASelector(BaseSelector):
+    """Implements the selection operator defined for SMSEMOA.
+
+    Implements the selection operator defined for SMSEMOA, which included the hypervolume
+    contribution calculation.
+
+    Beume, N., Naujoks, B., & Emmerich, M. (2007). SMS-EMOA: Multiobjective selection based on dominated hypervolume.
+    European Journal of Operational Research, 181(3), 1653-1669. https://doi.org/10.1016/j.ejor.2006.08.008
+    """
+
+    @property
+    def provided_topics(self):
+        """The message topics this operator publishes, keyed by verbosity level."""
+        return {
+            0: [],
+            1: [SelectorMessageTopics.STATE],
+            2: [
+                SelectorMessageTopics.SELECTED_VERBOSE_OUTPUTS,
+                SelectorMessageTopics.STATE,
+            ],
+        }
+
+    @property
+    def interested_topics(self):
+        """The message topics this operator subscribes to."""
+        return []
+
+    def __init__(
+        self,
+        problem: Problem,
+        verbosity: int,
+        publisher: Publisher,
+        normalised_reference_point_component: float,
+        seed: int = 0,
+    ):
+        """Initialize the SMS-EMOA selection operator.
+
+        Args:
+            problem (Problem): The optimization problem to be solved.
+            verbosity (int): The verbosity level of the operator.
+            publisher (Publisher): The publisher to use for communication.
+            normalised_reference_point_component (float, optional): The reference point component used for hypervolume
+                calculation. The solutions are normalized to the range [0, 1] and the reference point is set to
+                a vector of ones multiplied by this component.
+            seed (int, optional): The random seed to use. Defaults to 0.
+        """
+        super().__init__(
+            problem,
+            verbosity=verbosity,
+            publisher=publisher,
+            seed=seed,
+        )
+        self.selection: list[int] | None = None
+        self.selected_individuals: SolutionType | None = None
+        self.selected_targets: pl.DataFrame | None = None
+        if normalised_reference_point_component < 1:
+            raise ValueError("The reference point component must be greater than or equal to 1.")
+        self.reference_point_component = normalised_reference_point_component
+        self.removed: int = 0
+
+    def do(
+        self,
+        parents: tuple[SolutionType, pl.DataFrame],
+        offsprings: tuple[SolutionType, pl.DataFrame],
+    ) -> tuple[SolutionType, pl.DataFrame]:
+        """Perform the selection operation.
+
+        Args:
+            parents (tuple[SolutionType, pl.DataFrame]): the decision variables as the first element.
+                The second element is the objective values, targets, and constraint violations.
+            offsprings (tuple[SolutionType, pl.DataFrame]): the decision variables as the first element.
+                The second element is the objective values, targets, and constraint violations.
+
+        Returns:
+            tuple[SolutionType, pl.DataFrame]: The selected decision variables and their objective values,
+                targets, and constraint violations.
+        """
+        if isinstance(parents[0], pl.DataFrame) and isinstance(offsprings[0], pl.DataFrame):
+            solutions = parents[0].vstack(offsprings[0])
+        elif isinstance(parents[0], list) and isinstance(offsprings[0], list):
+            solutions = parents[0] + offsprings[0]
+        else:
+            raise TypeError("The decision variables must be either a list or a polars DataFrame, not both")
+        alltargets = parents[1].vstack(offsprings[1])
+
+        if self.constraints_symbols is None or len(self.constraints_symbols) == 0:
+            # No constraints, use SMS-EMOA selection
+            self.removed = self._sms_emoa_selection(alltargets[self.target_symbols].to_numpy())
+        elif not (alltargets.select(self.constraints_symbols) > 0).to_numpy().any():
+            # All offsprings are feasible
+            self.removed = self._sms_emoa_selection(alltargets[self.target_symbols].to_numpy())
+        else:
+            # Some offsprings are infeasible. Remove the most infeasible offspring.
+            violations = (
+                alltargets[self.constraints_symbols].to_numpy(),
+                alltargets.select(self.constraints_symbols).to_numpy(),
+            )
+            self.removed = int(np.argmax(np.sum(np.maximum(0, violations), axis=1)))
+
+        self.selection = list(range(len(alltargets)))
+        self.selection.remove(self.removed)
+        if isinstance(solutions, pl.DataFrame) and self.selection is not None:
+            self.selected_individuals = solutions[self.selection]
+        elif isinstance(solutions, list) and self.selection is not None:
+            self.selected_individuals = [solutions[i] for i in self.selection]
+        else:
+            raise RuntimeError("Something went wrong with the selection")
+
+        self.selected_targets = alltargets[self.selection]
+        self.notify()
+        return self.selected_individuals, self.selected_targets
+
+    def _sms_emoa_selection(self, targets: np.ndarray) -> int:
+        """Perform the SMS-EMOA selection operation.
+
+        Note that in the paper in Algorithm 2, the factor (totalHV - currentHV) is minimized. As totalHV is constant,
+        this is equivalent to maximizing currentHV, which is what we do here.
+
+        Args:
+            targets (np.ndarray): The objective values of the individuals.
+
+        Returns:
+            int: The index of the individual to be removed.
+        """
+        fronts = fast_non_dominated_sort_indices(targets)
+        last_front = fronts[-1]
+        if len(last_front) == 1:
+            return last_front[0]
+        # last front has more than one individual, compute hypervolume contributions
+        max_hv = -np.inf
+        worst_index = -1
+        targets = targets - np.min(targets, axis=0)  # shift to origin
+        targets = targets / np.max(targets, axis=0)  # scale to [0, 1] (based on the whole population)
+        # using moocore hv contribusions
+        hv_contribs = hv_contributions(
+            targets[last_front], ref=np.ones(targets.shape[1]) * self.reference_point_component
+        )
+        min_contrib_index = np.argmin(hv_contribs)
+        return last_front[min_contrib_index]
+        for i in last_front:
+            remaining_front = [j for j in last_front if j != i]
+            current_hv = hv(targets[remaining_front], reference_point_component=self.reference_point_component)
+            if current_hv > max_hv:
+                max_hv = current_hv
+                worst_index = i
+        return worst_index
+
+    def update(self, message: Message) -> None:
+        """Handle an incoming message. This operator does not react to messages."""
+
+    def state(self) -> Sequence[Message]:
+        """Return the operator's state as messages for the current verbosity level."""
+        if self.verbosity == 0 or self.selection is None or self.selected_targets is None:
+            return []
+        if self.verbosity == 1:
+            return [
+                DictMessage(
+                    topic=SelectorMessageTopics.STATE,
+                    value={
+                        "selection": self.selection,
+                        "removed": self.removed,
+                    },
+                    source=self.__class__.__name__,
+                )
+            ]
+        # verbosity == 2
+        if isinstance(self.selected_individuals, pl.DataFrame):
+            message = PolarsDataFrameMessage(
+                topic=SelectorMessageTopics.SELECTED_VERBOSE_OUTPUTS,
+                value=pl.concat([self.selected_individuals, self.selected_targets], how="horizontal"),
+                source=self.__class__.__name__,
+            )
+        else:
+            warnings.warn("Population is not a Polars DataFrame. Defaulting to providing OUTPUTS only.", stacklevel=2)
+            message = PolarsDataFrameMessage(
+                topic=SelectorMessageTopics.SELECTED_VERBOSE_OUTPUTS,
+                value=self.selected_targets,
+                source=self.__class__.__name__,
+            )
+        return [
+            DictMessage(
+                topic=SelectorMessageTopics.STATE,
+                value={
+                    "selection": self.selection,
+                    "removed": self.removed,
+                },
+                source=self.__class__.__name__,
+            ),
+            message,
+        ]

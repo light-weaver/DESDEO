@@ -13,7 +13,7 @@ The problem definition is a JSON file that contains the following information:
 
 from collections import Counter
 from collections.abc import Iterable
-from enum import Enum
+from enum import StrEnum
 from itertools import product
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any, Literal, Self
@@ -98,33 +98,6 @@ def parse_infix_to_func(cls: "Problem", v: str | list) -> list:
     raise ValueError(msg)
 
 
-def parse_scenario_key_singleton_to_list(cls: "Problem", v: str | list[str]) -> list[str] | None:
-    """Validator that checks the type of a scenario key.
-
-    If the type is a list, it will be returned as it is. If it is a string,
-    then a list with the single string is returned. Else, a ValueError is raised.
-
-    Args:
-        cls: the class of the pydantic model the validator is applied to.
-        v (str | list[str]): the scenario key, or keys, to be validated.
-
-    Raises:
-        ValueError: raised when `v` it neither a string or a list.
-
-    Returns:
-        list[str]: a list with scenario keys.
-    """
-    if v is None:
-        return v
-    if isinstance(v, str):
-        return [v]
-    if isinstance(v, list):
-        return v
-
-    msg = f"The scenario keys must be either a list of strings, or a single string. Got {type(v)}."
-    raise ValueError(msg)
-
-
 def parse_list_to_mathjson(cls: "TensorVariable", v: Tensor | VariableType | None) -> list:
     """Validator that makes sure a nested Python list is represented as tensor following the MathJSON convention.
 
@@ -200,7 +173,7 @@ def get_tensor_values(
     raise ValueError(msg)
 
 
-class VariableTypeEnum(str, Enum):
+class VariableTypeEnum(StrEnum):
     """An enumerator for possible variable types."""
 
     real = "real"
@@ -211,7 +184,7 @@ class VariableTypeEnum(str, Enum):
     """A binary variable."""
 
 
-class VariableDomainTypeEnum(str, Enum):
+class VariableDomainTypeEnum(StrEnum):
     """An enumerator for the possible variable type domains of a problem."""
 
     continuous = "continuous"
@@ -224,7 +197,7 @@ class VariableDomainTypeEnum(str, Enum):
     """Some variables are continuos, some are integer or binary."""
 
 
-class ConstraintTypeEnum(str, Enum):
+class ConstraintTypeEnum(StrEnum):
     """An enumerator for supported constraint expression types."""
 
     EQ = "="
@@ -233,7 +206,7 @@ class ConstraintTypeEnum(str, Enum):
     """An inequality constraint of type 'less than or equal'."""
 
 
-class ObjectiveTypeEnum(str, Enum):
+class ObjectiveTypeEnum(StrEnum):
     """An enumerator for supported objective function types."""
 
     analytical = "analytical"
@@ -646,15 +619,7 @@ class ExtraFunction(BaseModel):
         description="Whether the function expression is twice differentiable or not. Defaults to `False`", default=False
     )
     """Whether the function expression is twice differentiable or not. Defaults to `False`"""
-    scenario_keys: list[str] | None = Field(
-        description="Optional. The keys of the scenario the extra functions belongs to.", default=None
-    )
-    """Optional. The keys of the scenarios the extra functions belongs to."""
-
     _parse_infix_to_func = field_validator("func", mode="before")(parse_infix_to_func)
-    _parse_scenario_key_singleton_to_list = field_validator("scenario_keys", mode="before")(
-        parse_scenario_key_singleton_to_list
-    )
 
 
 class ScalarizationFunction(BaseModel):
@@ -698,15 +663,7 @@ class ScalarizationFunction(BaseModel):
         default=False,
     )
     """Whether the function expression is twice differentiable or not. Defaults to `False`"""
-    scenario_keys: list[str] = Field(
-        description="Optional. The keys of the scenarios the scalarization function belongs to.", default=None
-    )
-    """Optional. The keys of the scenarios the scalarization function belongs to."""
-
     _parse_infix_to_func = field_validator("func", mode="before")(parse_infix_to_func)
-    _parse_scenario_key_singleton_to_list = field_validator("scenario_keys", mode="before")(
-        parse_scenario_key_singleton_to_list
-    )
 
 
 class Url(BaseModel):
@@ -888,15 +845,7 @@ class Objective(BaseModel):
         description="Whether the function expression is twice differentiable or not. Defaults to `False`", default=False
     )
     """Whether the function expression is twice differentiable or not. Defaults to `False`"""
-    scenario_keys: list[str] | None = Field(
-        description="Optional. The keys of the scenarios the objective function belongs to.", default=None
-    )
-    """Optional. The keys of the scenarios the objective function belongs to."""
-
     _parse_infix_to_func = field_validator("func", mode="before")(parse_infix_to_func)
-    _parse_scenario_key_singleton_to_list = field_validator("scenario_keys", mode="before")(
-        parse_scenario_key_singleton_to_list
-    )
 
 
 class Constraint(BaseModel):
@@ -982,15 +931,7 @@ class Constraint(BaseModel):
         description="Whether the function expression is twice differentiable or not. Defaults to `False`", default=False
     )
     """Whether the function expression is twice differentiable or not. Defaults to `False`"""
-    scenario_keys: list[str] | None = Field(
-        description="Optional. The keys of the scenarios the constraint belongs to.", default=None
-    )
-    """Optional. The keys of the scenarios the constraint belongs to."""
-
     _parse_infix_to_func = field_validator("func", mode="before")(parse_infix_to_func)
-    _parse_scenario_key_singleton_to_list = field_validator("scenario_keys", mode="before")(
-        parse_scenario_key_singleton_to_list
-    )
 
 
 class DiscreteRepresentation(BaseModel):
@@ -1062,7 +1003,6 @@ class Problem(BaseModel):
             is_convex=db_instance.is_convex,
             is_linear=db_instance.is_linear,
             is_twice_differentiable=db_instance.is_twice_differentiable,
-            scenario_keys=db_instance.scenario_keys,
             constants=constants if constants != [] else None,
             variables=[Variable.model_validate(var) for var in db_instance.variables]
             + [TensorVariable.model_validate(var) for var in db_instance.tensor_variables],
@@ -1137,6 +1077,30 @@ class Problem(BaseModel):
             symbols += [scalarization.symbol for scalarization in self.scalarization_funcs]
 
         return symbols
+
+    def get_symbol_type_map(self) -> dict[str, str]:
+        """Return a mapping of every named symbol to its element type.
+
+        The type strings match the field names used in `Problem`:
+        ``"variables"``, ``"constants"``, ``"objectives"``, ``"constraints"``,
+        ``"extra_funcs"``, ``"scalarization_funcs"``.
+        Scalarization functions with ``symbol=None`` are omitted.
+        """
+        mapping: dict[str, str] = {}
+        for v in self.variables:
+            mapping[v.symbol] = "variables"
+        for c in self.constants or []:
+            mapping[c.symbol] = "constants"
+        for o in self.objectives:
+            mapping[o.symbol] = "objectives"
+        for c in self.constraints or []:
+            mapping[c.symbol] = "constraints"
+        for f in self.extra_funcs or []:
+            mapping[f.symbol] = "extra_funcs"
+        for s in self.scalarization_funcs or []:
+            if s.symbol is not None:
+                mapping[s.symbol] = "scalarization_funcs"
+        return mapping
 
     def add_scalarization(self, new_scal: ScalarizationFunction) -> "Problem":
         """Adds a new scalarization function to the model.
@@ -1396,8 +1360,8 @@ class Problem(BaseModel):
         the problem for each objective function. These values may be `None`.
 
         Returns:
-            dict[str, float | None] | None: an objective dict with the ideal
-                point values (which may be `None`), or `None`.
+            dict[str, float | None]: an objective dict with the ideal
+                point values (which may be `None`).
         """
         return {f"{obj.symbol}": obj.ideal for obj in self.objectives}
 
@@ -1408,8 +1372,8 @@ class Problem(BaseModel):
         the problem for each objective function. These values may be `None`.
 
         Returns:
-            dict[str, float | None] | None: an objective dict with the nadir
-                point values (which may be `None`), or `None`.
+            dict[str, float | None]: an objective dict with the nadir
+                point values (which may be `None`).
         """
         return {f"{obj.symbol}": obj.nadir for obj in self.objectives}
 
@@ -1522,84 +1486,6 @@ class Problem(BaseModel):
 
         return all(is_diff_values)
 
-    def get_scenario_problem(self, target_keys: str | list[str]) -> "Problem":
-        """Returns a new Problem with fields belonging to a specified scenario.
-
-        The new problem will have the fields `objectives`, `constraints`, `extra_funcs`,
-        and `scalarization_funcs` with only the entries that belong to the specified
-        scenario. The other entries will remain unchanged.
-
-        Note:
-            Fields with their `scenario_key` being `None` are assumed to belong to all scenarios,
-            and are thus always included in each scenario.
-
-        Args:
-            target_keys (str | list[str]): the key or keys of the scenario(s) we wish to get.
-
-        Raises:
-            ValueError: (some of) the given `target_keys` has not been defined to be a scenario
-                in the problem.
-
-        Returns:
-            Problem: a new problem with only the field that belong to the specified scenario.
-        """
-        if isinstance(target_keys, str):
-            # if just a single key is given, make a list out of it.abs
-            target_keys = [target_keys]
-
-        # the any matches any keys
-        if self.scenario_keys is None or not any(element in target_keys for element in self.scenario_keys):
-            # invalid scenario
-            msg = (
-                f"The scenario '{target_keys}' has not been defined to be a valid scenario, or the problem has no "
-                "scenarios defined."
-            )
-            raise ValueError(msg)
-
-        # add the fields if the field has the given target_keys in its scenario_keys, or if the
-        # target_keys is None
-        scenario_objectives = [
-            obj
-            for obj in self.objectives
-            if obj.scenario_keys is None or any(element in target_keys for element in obj.scenario_keys)
-        ]
-        scenario_constraints = (
-            [
-                cons
-                for cons in self.constraints
-                if cons.scenario_keys is None or any(element in target_keys for element in cons.scenario_keys)
-            ]
-            if self.constraints is not None
-            else None
-        )
-        scenario_extras = (
-            [
-                extra
-                for extra in self.extra_funcs
-                if extra.scenario_keys is None or any(element in target_keys for element in extra.scenario_keys)
-            ]
-            if self.extra_funcs is not None
-            else None
-        )
-        scenario_scals = (
-            [
-                scal
-                for scal in self.scalarization_funcs
-                if scal.scenario_keys is None or any(element in target_keys for element in scal.scenario_keys)
-            ]
-            if self.scalarization_funcs is not None
-            else None
-        )
-
-        return self.model_copy(
-            update={
-                "objectives": scenario_objectives,
-                "constraints": scenario_constraints,
-                "extra_funcs": scenario_extras,
-                "scalarization_funcs": scenario_scals,
-            }
-        )
-
     def save_to_json(self, path: Path) -> None:
         """Save the Problem model in JSON format to a file.
 
@@ -1665,18 +1551,6 @@ class Problem(BaseModel):
     fetched from this with the given variable values.  Is also utilized for
     methods which require both an analytical and discrete representation of a
     problem. Defaults to `None`."""
-    scenario_keys: list[str] | None = Field(
-        description=(
-            "Optional. The scenario keys defined for the problem. Each key will point to a subset of objectives, "
-            "constraints, extra functions, and scalarization functions that have the same scenario key defined to them."
-            "If None, then the problem is assumed to not contain scenarios."
-        ),
-        default=None,
-    )
-    """Optional. The scenario keys defined for the problem. Each key will point
-    to a subset of objectives, " "constraints, extra functions, and
-    scalarization functions that have the same scenario key defined to them."
-    "If None, then the problem is assumed to not contain scenarios."""
     simulators: list[Simulator] | None = Field(
         description=(
             "Optional. The simulators used by the problem. Required when there are one or more "

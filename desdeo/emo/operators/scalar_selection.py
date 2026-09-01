@@ -1,5 +1,6 @@
 """Classs for scalar selection operators."""
 
+import warnings
 from abc import abstractmethod
 from collections.abc import Sequence
 
@@ -7,7 +8,13 @@ import numpy as np
 import polars as pl
 
 from desdeo.emo.operators.selection import SolutionType
-from desdeo.tools.message import Message, SelectorMessageTopics
+from desdeo.tools.message import (
+    DictMessage,
+    Message,
+    NumpyArrayMessage,
+    PolarsDataFrameMessage,
+    SelectorMessageTopics,
+)
 from desdeo.tools.patterns import Publisher, Subscriber
 
 
@@ -16,6 +23,7 @@ class BaseScalarSelector(Subscriber):
 
     @property
     def provided_topics(self):
+        """The message topics provided by the selection operator."""
         return {
             0: [],
             1: [],
@@ -24,6 +32,7 @@ class BaseScalarSelector(Subscriber):
 
     @property
     def interested_topics(self):
+        """The message topics that the selection operator is interested in."""
         return [
             SelectorMessageTopics.SELECTED_FITNESS,
         ]
@@ -96,6 +105,7 @@ class BaseScalarSelector(Subscriber):
             raise ValueError(f"Unknown message topic: {message.topic}")
 
     def state(self) -> Sequence[Message]:
+        """Return the state of the selection operator."""
         return []
 
 
@@ -109,7 +119,8 @@ class TournamentSelection(BaseScalarSelector):
         verbosity: int,
         publisher: Publisher,
         tournament_size: int = 2,
-        seed: int | None = None,
+        seed: int = 0,
+        stochastic: bool = False,
         selection_probability: float | None = None,
     ) -> None:
         """Initialize the tournament selection operator.
@@ -120,28 +131,34 @@ class TournamentSelection(BaseScalarSelector):
             publisher (Publisher): The publisher to send messages to.
             tournament_size (int, optional): The size of the tournament. Defaults to 2, which corresponds to binary
                 tournament.
-            seed (int | None, optional): The seed for the random number generator. If None, the deterministic tournament
-                selection is used, i.e., the solution with the highest fitness in the tournament is always selected.
-                Otherwise the selection is stochastic, and the solution is selected with a probability proportional to
-                its fitness. Defaults to None.
-            selection_probability (float | None, optional): The probability of selecting a solution in the tournament.
-                If None, but a seed is provided, then the probabilities are proportional to the fitness values of the
-                solutions in the tournament. If None and no seed is provided, then the selection is deterministic.
-                If a value is provided, and the seed is not None, then the selection is stochastic, and the
-                probabilities of choosing the k-best solution in the tournament is given by p * (1 - p) ** (k - 1),
-                where p is the selection probability. Note that doing selection with a probability proportional to
-                fitness is equivalent to roulette wheel selection.
+            seed (int, optional): The seed for the random number generator, which draws the tournaments and, when
+                `stochastic` is set, the winner within each one. Defaults to 0.
+            stochastic (bool, optional): If False, the solution with the highest fitness in the tournament always
+                wins. If True, the winner is drawn at random, with a probability proportional to fitness unless
+                `selection_probability` says otherwise, which is roulette wheel selection. Defaults to False.
+            selection_probability (float | None, optional): The probability of selecting a solution in the tournament,
+                only meaningful when `stochastic` is set. If None, the probabilities are proportional to the fitness
+                values of the solutions in the tournament. If a value p is given, the probability of choosing the
+                k-best solution in the tournament is p * (1 - p) ** (k - 1).
+
+        Raises:
+            ValueError: If `selection_probability` is given without `stochastic`, which would silently ignore it.
+
+        Note:
+            `seed` used to double as the switch between the two rules, so that leaving it unset made the selection
+            deterministic *and* seeded the generator from OS entropy. That made a whole run irreproducible even with
+            a fixed template seed, so the two are now separate: `seed` only seeds, and `stochastic` only chooses the
+            rule.
         """
         super().__init__(verbosity=verbosity, publisher=publisher)
         self.winner_size = winner_size
         self.tournament_size = tournament_size
         self.seed = seed
         self.rng = np.random.default_rng(seed)
+        self.stochastic = stochastic
         self.selection_probability = selection_probability
-        if self.seed is None and self.selection_probability is not None:
-            raise ValueError(
-                "If selection_probability is provided, seed must also be provided to ensure stochastic selection."
-            )
+        if not self.stochastic and self.selection_probability is not None:
+            raise ValueError("If selection_probability is provided, stochastic must be True for it to have an effect.")
 
     @staticmethod
     def deterministic_select(indices: np.ndarray, fitness: np.ndarray) -> int:
@@ -167,7 +184,9 @@ class TournamentSelection(BaseScalarSelector):
             int: The index of the selected solution.
         """
         if self.selection_probability is None:
-            probabilities = fitness / np.sum(fitness)
+            # Fitness can sum to zero (e.g. all-zero fitness), giving 0/0; the resulting nan is acceptable.
+            with np.errstate(divide="ignore", invalid="ignore"):
+                probabilities = fitness / np.sum(fitness)
             probabilities = np.cumsum(probabilities)
         else:
             indices = indices[np.argsort(fitness)[::-1]]  # Sort indices by fitness in descending order
@@ -193,10 +212,151 @@ class TournamentSelection(BaseScalarSelector):
         selected_indices = np.zeros(self.winner_size, dtype=int)
         for i in range(self.winner_size):
             tournament_indices = self.rng.choice(range(len(solutions[0])), size=self.tournament_size, replace=True)
-            if self.seed is None:
-                selected_indices[i] = self.deterministic_select(tournament_indices, fitness[tournament_indices])
-            else:
+            if self.stochastic:
                 selected_indices[i] = self.stochastic_select(tournament_indices, fitness[tournament_indices])
+            else:
+                selected_indices[i] = self.deterministic_select(tournament_indices, fitness[tournament_indices])
         selected_solutions = solutions[0][selected_indices]
         selected_outputs = solutions[1][selected_indices]
         return selected_solutions, selected_outputs
+
+
+class ElitistSelection(BaseScalarSelector):
+    """Deterministic elitist selection: keep the top ``winner_size`` rows by a single output column.
+
+    The selector ranks the combined ``(decision_variables, outputs)`` tuple by
+    the values of ``outputs[target_column]`` (lower is better) and returns the
+    best ``winner_size`` rows. No randomness, so the operation is reproducible.
+    Useful as an elitist scheme for any single fitness column already present
+    in the outputs DataFrame, e.g. an achievement scalarizing function value
+    added via [desdeo.tools.scalarization.add_asf_nondiff][].
+    """
+
+    @property
+    def provided_topics(self):
+        """Topics published by this selector for each verbosity level."""
+        return {
+            0: [],
+            1: [SelectorMessageTopics.STATE],
+            2: [SelectorMessageTopics.SELECTED_VERBOSE_OUTPUTS, SelectorMessageTopics.SELECTED_FITNESS],
+        }
+
+    @property
+    def interested_topics(self):
+        """ElitistSelection reads its fitness column from the outputs DataFrame; no subscriptions needed."""
+        return []
+
+    def __init__(
+        self,
+        *,
+        winner_size: int,
+        target_column: str,
+        verbosity: int,
+        publisher: Publisher,
+    ):
+        """Initialize the elitist scalar selector.
+
+        Args:
+            winner_size (int): The number of individuals to keep after selection.
+            target_column (str): Name of the output column to sort by (ascending,
+                lower is better).
+            verbosity (int): Verbosity level for emitted messages.
+            publisher (Publisher): Publisher used to emit selection state.
+        """
+        super().__init__(verbosity=verbosity, publisher=publisher)
+        self.winner_size = winner_size
+        self.target_column = target_column
+        self.selection: list[int] | None = None
+        self.selected_individuals: SolutionType | None = None
+        self.selected_targets: pl.DataFrame | None = None
+
+    def do(
+        self,
+        solutions: tuple[SolutionType, pl.DataFrame],
+        fitness: np.ndarray | None = None,
+    ) -> tuple[SolutionType, pl.DataFrame]:
+        """Keep the top ``winner_size`` rows by ``target_column`` (ascending).
+
+        Args:
+            solutions (tuple[SolutionType, pl.DataFrame]): Combined parents and
+                offspring as a single ``(decision_variables, outputs)`` tuple.
+            fitness (np.ndarray | None, optional): Optional fitness override.
+                If ``None`` (the usual case), the values in
+                ``outputs[target_column]`` are used.
+
+        Returns:
+            tuple[SolutionType, pl.DataFrame]: The selected decision variables
+                and their outputs.
+        """
+        decvars, outputs = solutions
+        values = fitness if fitness is not None else outputs[self.target_column].to_numpy()
+        order = np.argsort(values, kind="stable")
+        chosen = order[: self.winner_size].tolist()
+
+        if isinstance(decvars, pl.DataFrame):
+            self.selected_individuals = decvars[chosen]
+        else:
+            self.selected_individuals = [decvars[i] for i in chosen]
+        self.selected_targets = outputs[chosen]
+        self.selection = chosen
+        self.fitness = np.asarray(values)[chosen]
+
+        self.notify()
+        return self.selected_individuals, self.selected_targets
+
+    def _do(
+        self,
+        solutions: tuple[SolutionType, pl.DataFrame],
+        fitness: np.ndarray | None = None,
+    ) -> tuple[SolutionType, pl.DataFrame]:
+        """ABC requirement: delegate to the public `do()`."""
+        return self.do(solutions, fitness)
+
+    def state(self) -> Sequence[Message]:
+        """Emit the selection state for archivers and other listeners."""
+        if self.verbosity == 0 or self.selection is None or self.selected_targets is None:
+            return []
+        if self.verbosity == 1:
+            return [
+                DictMessage(
+                    topic=SelectorMessageTopics.STATE,
+                    value={
+                        "winner_size": self.winner_size,
+                        "selected_individuals": self.selection,
+                    },
+                    source=self.__class__.__name__,
+                )
+            ]
+        # verbosity == 2
+        if isinstance(self.selected_individuals, pl.DataFrame):
+            message = PolarsDataFrameMessage(
+                topic=SelectorMessageTopics.SELECTED_VERBOSE_OUTPUTS,
+                value=pl.concat([self.selected_individuals, self.selected_targets], how="horizontal"),
+                source=self.__class__.__name__,
+            )
+        else:
+            warnings.warn("Population is not a Polars DataFrame. Defaulting to providing OUTPUTS only.", stacklevel=2)
+            message = PolarsDataFrameMessage(
+                topic=SelectorMessageTopics.SELECTED_VERBOSE_OUTPUTS,
+                value=self.selected_targets,
+                source=self.__class__.__name__,
+            )
+        return [
+            DictMessage(
+                topic=SelectorMessageTopics.STATE,
+                value={
+                    "winner_size": self.winner_size,
+                    "selected_individuals": self.selection,
+                },
+                source=self.__class__.__name__,
+            ),
+            message,
+            NumpyArrayMessage(
+                topic=SelectorMessageTopics.SELECTED_FITNESS,
+                value=self.fitness,
+                source=self.__class__.__name__,
+            ),
+        ]
+
+    def update(self, message: Message) -> None:
+        """ElitistSelection has no subscriptions; ignore any messages."""

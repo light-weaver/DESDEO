@@ -77,13 +77,13 @@ class CVXPYEvaluator:
         # Add objective function expressions
         self.objective_functions = self.init_objectives(problem)
 
-        # Add constraints, if any
-        if problem.constraints is not None:
-            self.constraints = self.init_constraints(problem)
-
         # Add scalarization functions, if any
         if problem.scalarization_funcs is not None:
             self.scalarizations = self.init_scalarizations(problem)
+
+        # Add constraints, if any
+        if problem.constraints is not None:
+            self.constraints = self.init_constraints(problem)
 
         self.problem = problem
 
@@ -253,7 +253,7 @@ class CVXPYEvaluator:
         self.objective_functions[obj.symbol] = expr
 
         # the obj.symbol_min objectives are used when optimizing and building scalarizations etc...
-        self.objective_functions[f"{obj.symbol}_min"] = -expr if obj.maximize else expr
+        self.objective_functions[f"{obj.symbol}_min"] = -(expr) if obj.maximize else expr
 
     def add_scalarization_function(self, scal: ScalarizationFunction):
         """Adds a scalarization expression to the CVXPY evaluator.
@@ -435,11 +435,11 @@ class CVXPYEvaluator:
         self.objective_expr = objective
         self.problem_model = cp.Problem(objective, list(self.constraints.values()))
 
-    def solve(self, **kwargs):
+    def solve(self, **kwargs: dict[str, any]):
         """Solve the CVXPY problem.
 
         Args:
-            **kwargs: additional arguments to pass to cp.Problem.solve().
+            **kwargs (dict[str, any]): additional arguments to pass to cp.Problem.solve().
         """
         if self.problem_model is None:
             msg = "No optimization target has been set. Call set_optimization_target() first."
