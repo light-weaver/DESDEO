@@ -56,6 +56,7 @@ nav:
       - "How to use ADMS": "howtoguides/how_to_use_adms.ipynb"
       - "How to use GDM score": "howtoguides/gdm_score.ipynb"
       - "How to generate a representative set of solutions": "howtoguides/IPR.ipynb"
+      - "How to generate reference points for a group of decision makers": "howtoguides/group_reference_points.ipynb"
   - "Core-Logic API Reference":
       - "": "api/index.md"
       - "problem": "api/desdeo_problem.md"
