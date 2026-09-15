@@ -94,6 +94,11 @@
         heading_level: 3
         show_root_heading: false
 
+::: desdeo.tools.group_reference_points
+    options:
+        heading_level: 3
+        show_root_heading: false
+
 ## Non-dominated sorting
 ::: desdeo.tools.non_dominated_sorting
     options:
