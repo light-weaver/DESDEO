@@ -1,9 +1,9 @@
 """Generate IPR reference points inside the convex hull of a group's aspiration points.
 
-In group decision making each decision maker (DM) gives an aspiration point, and the convex hull of these points
-is the region of compromise between them. The functions here sample reference points uniformly inside that hull,
-so that the iterative Pareto representer (`desdeo.tools.iterative_pareto_representer`) only searches for solutions
-between what the DMs asked for.
+In "favourite" method (name is WIP) each decision maker (DM) has a corresponding aspiration point, and the convex hull
+of these points is the region of compromise between them. The functions here sample reference points uniformly inside
+that hull, so that the iterative Pareto representer (`desdeo.tools.iterative_pareto_representer`) only searches for
+solutions between what the DMs asked for.
 
 The aspiration points may contain duplicates, some may lie inside the hull of the others, and together they may
 span an affine subspace of any dimension up to the number of objectives (a line, a plane, a hyperplane). The hull
