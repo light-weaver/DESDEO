@@ -134,8 +134,7 @@ def sample_convex_hull(flat_points: np.ndarray, num_points: int, rng: np.random.
 
     In one dimension the hull is an interval and the samples are uniform on it. In more dimensions the vertices of
     the hull are triangulated (Delaunay), a simplex is picked with probability proportional to its volume, and a
-    point is drawn uniformly inside it with Dirichlet(1, ..., 1) barycentric weights. The result is exactly uniform
-    over the hull, with no rejection step.
+    point is drawn uniformly inside it with Dirichlet(1, ..., 1) barycentric weights.
 
     Args:
         flat_points (np.ndarray): the points, shape (m, d) with d >= 1. They must span all d dimensions, for
