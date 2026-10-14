@@ -1,0 +1,25 @@
+# A small version of the whole design that runs every phase in a few minutes on a laptop, for
+# checking the workflow and for reviewers:
+#
+#     uv run --group experiment snakemake --cores 8 --configfile config/smoke.yaml
+#
+# Layered on top of config.yaml, so only what differs is here. Results go to their own directory.
+
+results: results_smoke
+
+run:
+  instances: [dtlz2_m3_n12, re33_m3]
+  algorithms: [nsga3, ibea]
+  crossovers: [sbx_default, sbx_no_uniform, de]
+  seeds: [0, 1]
+
+calibration:
+  seeds: [0, 1]
+  max_evaluations: 4000
+  n_checkpoints: 30
+  rounding: 500
+  floor: 2000
+  ceiling: 4000
+
+landscape:
+  sample_size_per_var: 50

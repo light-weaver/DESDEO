@@ -1,0 +1,14 @@
+[project]
+name = "xover-ela"
+version = "0.1.0"
+description = "pflacco's ELA features for the crossover-selection study, in their own interpreter."
+# pflacco 1.2.2 pins scikit-learn 1.2.2 and numpy<2, which DESDEO's environment cannot hold.
+requires-python = ">=3.11,<3.12"
+dependencies = [
+    "pflacco==1.2.2",
+    "pandas>=2.0",
+    "pyarrow>=14,<26",  # 26 needs numpy 2
+]
+
+[tool.uv]
+package = false

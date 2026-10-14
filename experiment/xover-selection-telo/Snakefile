@@ -1,0 +1,303 @@
+"""The crossover-selection study as a Snakemake workflow.
+
+    uv run --group experiment snakemake --cores 8                         # everything
+    uv run --group experiment snakemake --cores 8 budgets                 # phase 1 only
+    uv run --group experiment snakemake --cores 8 --configfile config/smoke.yaml
+
+Phases, and the target that stops after each:
+
+    0  problem_data      build every instance once (warms the MetallAppl surrogate cache)
+    1  budgets           calibrate one evaluation budget per instance
+    2  fronts            archive runs, merged into one frozen reference front per instance
+    3  runs              the main grid; every run dumps its population at each budget fraction
+    4  indicators        score every run against its instance's front
+    5  features          landscape features on one large sample per instance
+
+Phases 2 and 3 only need the budgets, so they run side by side; phase 5 needs only the problems.
+Each job is one *block* (instance x algorithm x crossover x mutation, every seed) or one instance,
+and gets its slice of the config as `params`, so editing one operator reruns only its jobs.
+"""
+
+import os
+import sys
+
+configfile: "config/config.yaml"
+
+# The scripts import the `xover` package from this directory, and each job must stay on one core:
+# numpy, polars and numba would otherwise each open a thread pool per job.
+sys.path.insert(0, workflow.basedir)
+os.environ["PYTHONPATH"] = os.pathsep.join(filter(None, [workflow.basedir, os.environ.get("PYTHONPATH")]))
+for variable in (
+    "POLARS_MAX_THREADS",
+    "OMP_NUM_THREADS",
+    "OPENBLAS_NUM_THREADS",
+    "MKL_NUM_THREADS",
+    "NUMEXPR_NUM_THREADS",
+    "NUMBA_NUM_THREADS",
+):
+    os.environ.setdefault(variable, "1")
+
+from xover import design  # noqa: E402
+
+design.validate(config)
+
+R = config["results"]
+INSTANCES = list(design.selected_instances(config))
+BLOCKS = design.run_blocks(config)
+FRONT_BLOCKS = design.front_blocks(config)
+ELA_ENV = os.path.join(workflow.basedir, "envs", "ela")
+
+PROBLEM_DATA = f"{R}/problem_data.json"
+BUDGET = f"{R}/budgets/{{inst}}.json"
+FRONT_RUN = f"{R}/front_runs/{{inst}}/{{alg}}/{{xo}}/{{mut}}"
+FRONT = f"{R}/fronts/{{inst}}"
+RUN = f"{R}/runs/{{inst}}/{{alg}}/{{xo}}/{{mut}}/s{{seed}}"
+INDICATORS = f"{R}/indicators/{{inst}}/{{alg}}.parquet"
+MECHANISM = f"{R}/mechanism/{{inst}}/{{alg}}.parquet"
+SAMPLE = f"{R}/landscape/sample/{{inst}}.npz"
+MO_FEATURES = f"{R}/landscape/mo/{{inst}}.parquet"
+ELA_FEATURES = f"{R}/landscape/ela/{{inst}}.parquet"
+
+wildcard_constraints:
+    inst=r"[^/]+",
+    alg=r"[^/]+",
+    xo=r"[^/]+",
+    mut=r"[^/]+",
+
+
+def fill(pattern, **values):
+    """`pattern` with the named wildcards filled in and any others left in place."""
+    for key, value in values.items():
+        pattern = pattern.replace("{" + key + "}", str(value))
+    return pattern
+
+
+def blocks_of(blocks, pattern, **filters):
+    """`pattern` filled in for every block matching `filters`."""
+    return [
+        fill(pattern, inst=b.instance, alg=b.algorithm, xo=b.crossover, mut=b.mutation)
+        for b in blocks
+        if all(getattr(b, key) == value for key, value in filters.items())
+    ]
+
+
+def with_seeds(paths):
+    """Each path once per seed of the main grid."""
+    return [fill(path, seed=seed) for path in paths for seed in config["run"]["seeds"]]
+
+
+INSTANCE_ALGORITHMS = sorted({(b.instance, b.algorithm) for b in BLOCKS})
+ALL_INDICATORS = [fill(INDICATORS, inst=i, alg=a) for i, a in INSTANCE_ALGORITHMS]
+
+
+rule all:
+    default_target: True
+    input:
+        ALL_INDICATORS,
+        f"{R}/budgets.csv",
+        f"{R}/features.parquet",
+
+
+# --------------------------------------------------------------------------------------------------
+# Targets, one per phase
+# --------------------------------------------------------------------------------------------------
+
+
+rule budgets:
+    input:
+        f"{R}/budgets.csv",
+
+
+rule fronts:
+    input:
+        expand(FRONT + ".npz", inst=INSTANCES),
+
+
+rule runs:
+    input:
+        with_seeds(blocks_of(BLOCKS, RUN + ".npz")),
+
+
+rule indicators:
+    input:
+        ALL_INDICATORS,
+
+
+rule features:
+    input:
+        f"{R}/features.parquet",
+
+
+# --------------------------------------------------------------------------------------------------
+# Phase 0
+# --------------------------------------------------------------------------------------------------
+
+
+rule problem_data:
+    output:
+        PROBLEM_DATA,
+    params:
+        suites=config["suites"],
+        instances=INSTANCES,
+    script:
+        "scripts/problem_data.py"
+
+
+# --------------------------------------------------------------------------------------------------
+# Phase 1
+# --------------------------------------------------------------------------------------------------
+
+
+rule calibrate:
+    input:
+        # `ancient`: the jobs need the cache warmed, but regenerating the record must not rerun them.
+        ancient(PROBLEM_DATA),
+    output:
+        BUDGET,
+    params:
+        calibration=config["calibration"],
+        crossover=lambda w: config["crossovers"][config["calibration"]["crossover"]],
+        mutation=lambda w: config["mutations"][config["calibration"]["mutation"]],
+        algorithm=lambda w: config["algorithms"][config["calibration"]["algorithm"]],
+        subset_cap=config["reference_front"]["subset_cap"],
+    script:
+        "scripts/calibrate.py"
+
+
+rule budget_table:
+    input:
+        expand(BUDGET, inst=INSTANCES),
+    output:
+        f"{R}/budgets.csv",
+    script:
+        "scripts/budget_table.py"
+
+
+# --------------------------------------------------------------------------------------------------
+# Phase 2
+# --------------------------------------------------------------------------------------------------
+
+
+rule front_runs:
+    input:
+        ancient(PROBLEM_DATA),
+        budget=BUDGET,
+    output:
+        npz=FRONT_RUN + ".npz",
+        json=FRONT_RUN + ".json",
+    params:
+        seeds=config["reference_front"]["seeds"],
+        algorithm=lambda w: config["algorithms"][w.alg],
+        crossover=lambda w: config["crossovers"][w.xo],
+        mutation=lambda w: config["mutations"][w.mut],
+        population_size=config["population_size"],
+        fractions=config["fractions"],
+        mechanism_stride=config["mechanism_stride"],
+    script:
+        "scripts/front_runs.py"
+
+
+rule reference_front:
+    input:
+        archives=lambda w: blocks_of(FRONT_BLOCKS, FRONT_RUN + ".npz", instance=w.inst),
+    output:
+        npz=FRONT + ".npz",
+        json=FRONT + ".json",
+    params:
+        subset_cap=config["reference_front"]["subset_cap"],
+        indicators=config["indicators"],
+    script:
+        "scripts/freeze_front.py"
+
+
+# --------------------------------------------------------------------------------------------------
+# Phase 3
+# --------------------------------------------------------------------------------------------------
+
+
+rule run_block:
+    input:
+        ancient(PROBLEM_DATA),
+        budget=BUDGET,
+    output:
+        npz=expand(RUN + ".npz", seed=config["run"]["seeds"], allow_missing=True),
+        json=expand(RUN + ".json", seed=config["run"]["seeds"], allow_missing=True),
+    params:
+        algorithm=lambda w: config["algorithms"][w.alg],
+        crossover=lambda w: config["crossovers"][w.xo],
+        mutation=lambda w: config["mutations"][w.mut],
+        population_size=config["population_size"],
+        fractions=config["fractions"],
+        mechanism_stride=config["mechanism_stride"],
+    script:
+        "scripts/run_block.py"
+
+
+# --------------------------------------------------------------------------------------------------
+# Phase 4
+# --------------------------------------------------------------------------------------------------
+
+
+rule score:
+    input:
+        front=FRONT + ".npz",
+        runs=lambda w: with_seeds(blocks_of(BLOCKS, RUN + ".npz", instance=w.inst, algorithm=w.alg)),
+    output:
+        indicators=INDICATORS,
+        mechanism=MECHANISM,
+    params:
+        fractions=config["fractions"],
+        indicators=config["indicators"],
+    script:
+        "scripts/score.py"
+
+
+# --------------------------------------------------------------------------------------------------
+# Phase 5
+# --------------------------------------------------------------------------------------------------
+
+
+rule sample_landscape:
+    input:
+        ancient(PROBLEM_DATA),
+    output:
+        SAMPLE,
+    params:
+        landscape=config["landscape"],
+    script:
+        "scripts/sample_landscape.py"
+
+
+rule mo_features:
+    input:
+        SAMPLE,
+    output:
+        MO_FEATURES,
+    script:
+        "scripts/mo_features.py"
+
+
+rule ela_features:
+    input:
+        SAMPLE,
+    output:
+        ELA_FEATURES,
+    params:
+        sets=" ".join(config["landscape"]["ela_sets"]),
+    shell:
+        # pflacco pins numpy<2 and scikit-learn 1.2.2, so it runs in its own small environment.
+        "env -u VIRTUAL_ENV uv run --project {ELA_ENV} --frozen python {ELA_ENV}/ela_features.py "
+        "{input} {output} --sets {params.sets}"
+
+
+rule combine_features:
+    input:
+        mo=expand(MO_FEATURES, inst=INSTANCES),
+        ela=expand(ELA_FEATURES, inst=INSTANCES),
+    output:
+        features=f"{R}/features.parquet",
+        report=f"{R}/features_report.json",
+    params:
+        landscape=config["landscape"],
+    script:
+        "scripts/features.py"
