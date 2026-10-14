@@ -28,10 +28,12 @@ mechanism_stride: 5
 population_size: {3: 91, 4: 120, 5: 210, 6: 132, 7: 126, 8: 120, 9: 156, 10: 220, 11: 220}
 
 # --------------------------------------------------------------------------------------------------
-# Problems. `xover/problems.py` expands these into instances with stable slugs.
+# Problems. `xover/problems.py` expands these into instances with stable slugs. Every instance belongs
+# to a suite (the key below) and a family: DTLZ/WFG, ZCAT and rotated DTLZ are benchmark problems,
+# the rest are real-world problems.
 # --------------------------------------------------------------------------------------------------
 suites:
-  benchmark:
+  dtlz_wfg:
     problems: [dtlz1, dtlz2, dtlz3, dtlz4, dtlz5, dtlz6, dtlz7,
                wfg1, wfg2, wfg3, wfg4, wfg5, wfg6, wfg7, wfg8, wfg9]
     blocks: [[3, 12], [3, 30], [5, 12], [8, 24]]      # (m, n_var); WFG needs n_var >= 2(m-1)+1

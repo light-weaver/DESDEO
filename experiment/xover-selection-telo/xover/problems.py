@@ -5,9 +5,13 @@ slug alone. Building is lazy: listing the instances builds only the cheap analyt
 read their objective symbols, and never MetallAppl or GAA, whose builders read datasets and fit
 surrogate models.
 
+Each instance has a suite, the set of problems it was generated from, and a family. The DTLZ/WFG,
+ZCAT and rotated-DTLZ suites are all benchmark problems; the real-world suite is the only real-world
+family.
+
 Slugs:
 
-- benchmarks: `{problem}_m{m}_n{n_var}`, for example `dtlz2_m3_n12`;
+- DTLZ and WFG: `{problem}_m{m}_n{n_var}`, for example `dtlz2_m3_n12`;
 - real-world problems: `{base}_m{m}` for the full objective set and `{base}_m{m}_{f_1-f_3-...}` for a
   sampled subset, `gaa_m{m}` and `metallappl_{variant}_m{m}`;
 - ZCAT: `{problem}_l{level}_ps{0|1}_m3_n30`;
@@ -31,12 +35,12 @@ class Instance:
 
     slug: str
     suite: str
-    """`benchmark`, `real_world`, `zcat` or `rotated_dtlz`."""
+    """`dtlz_wfg`, `zcat`, `rotated_dtlz` or `real_world`: the key under `config["suites"]`."""
     base: str
     """The base problem. Subsets of one base problem share a decision space (or, for MetallAppl,
     datasets and fitted models), so analyses that need independent instances group by this."""
     family: str
-    """`benchmark` or `real_world`."""
+    """`benchmark` (the DTLZ/WFG, ZCAT and rotated-DTLZ suites) or `real_world`."""
     m: int
     n_var: int
     spec: dict[str, Any] = field(compare=False)
@@ -46,7 +50,7 @@ def instances(suites: dict[str, Any]) -> dict[str, Instance]:
     """Every instance the suites generate, keyed by slug, in a fixed order."""
     out: dict[str, Instance] = {}
     generated = [
-        *_benchmark(suites.get("benchmark")),
+        *_dtlz_wfg(suites.get("dtlz_wfg")),
         *_real_world(suites.get("real_world")),
         *_zcat(suites.get("zcat")),
         *_rotated_dtlz(suites.get("rotated_dtlz")),
@@ -64,13 +68,13 @@ def instances(suites: dict[str, Any]) -> dict[str, Instance]:
 # --------------------------------------------------------------------------------------------------
 
 
-def _benchmark(suite: dict[str, Any] | None) -> list[Instance]:
+def _dtlz_wfg(suite: dict[str, Any] | None) -> list[Instance]:
     if not suite:
         return []
     return [
         Instance(
             slug=f"{name}_m{m}_n{n_var}",
-            suite="benchmark",
+            suite="dtlz_wfg",
             base=name,
             family="benchmark",
             m=m,

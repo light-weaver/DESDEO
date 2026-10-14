@@ -8,7 +8,7 @@ analyses onto those outputs. The old scripts are on branch `experiment/xover-sel
 
 | EMO-paper version | This pipeline |
 |---|---|
-| Three result trees (`results/`, `results_zcat/`, `results_rotated_dtlz/`) pooled by `XOVER_RUN=pooled` | One tree. Every table has a `suite` column (`benchmark`, `real_world`, `zcat`, `rotated_dtlz`) |
+| Three result trees (`results/`, `results_zcat/`, `results_rotated_dtlz/`) pooled by `XOVER_RUN=pooled` | One tree. Every table has a `suite` column (`dtlz_wfg`, `zcat`, `rotated_dtlz`, `real_world`) and a `family` column (`benchmark` for the first three, `real_world`) |
 | `indicators/{instance}.parquet` | `indicators/{instance}/{algorithm}.parquet`. Same 30 columns, minus `config_hash`, plus `suite` |
 | `mechanism/{instance}.parquet` | `mechanism/{instance}/{algorithm}.parquet`, same treatment |
 | A `config_hash` check on every load | Nothing to check: Snakemake keeps the tables consistent with the config |

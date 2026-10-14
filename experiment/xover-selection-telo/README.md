@@ -6,7 +6,8 @@ landscape features. It is a [Snakemake](https://snakemake.readthedocs.io) workfl
 Python package (`xover/`) built on [DESDEO](https://github.com/industrial-optimization-group/DESDEO).
 
 The study compares 13 real-coded crossover operators inside 3 algorithms (NSGA-III, NSGA-II, IBEA)
-on 150 problem instances with 3 to 11 objectives, at 11 seeds per configuration: 64 350 runs.
+on 150 problem instances with 3 to 11 objectives (108 benchmark instances from DTLZ, WFG, ZCAT and
+rotated DTLZ, and 42 real-world ones), at 11 seeds per configuration: 64 350 runs.
 
 ## Running it
 

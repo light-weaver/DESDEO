@@ -15,10 +15,15 @@ def test_grid_size(config):
     """150 instances x 3 algorithms x 13 crossovers x 1 mutation, at 11 seeds each."""
     instances = design.selected_instances(config)
     assert len(instances) == 150
-    assert {suite: sum(i.suite == suite for i in instances.values()) for suite in ("zcat", "rotated_dtlz")} == {
+    suites = [i.suite for i in instances.values()]
+    assert {s: suites.count(s) for s in set(suites)} == {
+        "dtlz_wfg": 64,
         "zcat": 40,
         "rotated_dtlz": 4,
+        "real_world": 42,
     }
+    families = [i.family for i in instances.values()]
+    assert {f: families.count(f) for f in set(families)} == {"benchmark": 108, "real_world": 42}
     assert len(design.run_blocks(config)) * len(config["run"]["seeds"]) == 64_350
     assert len(design.front_blocks(config)) * len(config["reference_front"]["seeds"]) == 150 * 78
 

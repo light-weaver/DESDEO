@@ -22,7 +22,7 @@ squares.
 |---|---|
 | Crossover | 13: `sbx_default`, `sbx_platemo`, `sbx_jmetal`, `sbx_no_uniform`, `blend`, `bex`, `bex_uniform`, `uniform`, `sax`, `de`, `pcx`, `composite`, `none` |
 | Algorithm | 3: NSGA-III, NSGA-II, IBEA |
-| Instance | 150: 64 DTLZ/WFG (four (m, n) blocks), 42 real-world (RE, rocket injector, river pollution, GAA ladder, MetallAppl), 40 ZCAT, 4 rotated DTLZ |
+| Instance | 150: 108 benchmark (64 DTLZ/WFG in four (m, n) blocks, 40 ZCAT, 4 rotated DTLZ) and 42 real-world (RE, rocket injector, river pollution, GAA ladder, MetallAppl) |
 | Seed | 11 (0 to 10) |
 
 Held fixed:
