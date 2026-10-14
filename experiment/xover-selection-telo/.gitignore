@@ -1,0 +1,11 @@
+results/
+.snakemake/
+logs/
+__marimo__/
+envs/ela/.venv/
+*.npz
+*.parquet
+*.csv
+*.png
+*.pdf
+*.joblib

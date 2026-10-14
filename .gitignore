@@ -150,7 +150,12 @@ test.db
 .DS_Store
 .vscode
 
-experiment/
+# experiment/* rather than experiment/, because git does not descend into an excluded
+# directory and a negation inside one has no effect.
+experiment/*
+# Opt this one study back in. This negation belongs to the experiment/xover-selection-telo
+# branch only and must never be committed to master.
+!experiment/xover-selection-telo/
 
 # testmondata
 .testmondata*

@@ -1,0 +1,183 @@
+# The full design of the crossover-selection study. This is the only file to edit to change the
+# setup. Override single values on the command line (`--config key=value`) or layer a smaller file on
+# top (`--configfile config/smoke.yaml`); dictionaries merge, lists are replaced whole.
+
+results: results
+
+# --------------------------------------------------------------------------------------------------
+# What is run. Every name here must be defined in the sections below. `instances: all` runs every
+# instance the suites generate; a list of slugs runs only those.
+# --------------------------------------------------------------------------------------------------
+run:
+  instances: all
+  algorithms: [nsga3, nsga2, ibea]
+  crossovers: [sbx_default, sbx_platemo, sbx_jmetal, sbx_no_uniform, blend, bex, bex_uniform,
+               uniform, sax, de, pcx, composite, none]
+  mutations: [polynomial]
+  seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+
+# Budget fractions at which every run's population is dumped: 0.02, then every 5 %.
+fractions: [0.02, 0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40, 0.45, 0.50,
+            0.55, 0.60, 0.65, 0.70, 0.75, 0.80, 0.85, 0.90, 0.95, 1.00]
+
+# Mechanism statistics (parent separation, offspring step, ...) are recorded every Nth generation.
+mechanism_stride: 5
+
+# Population size, and NSGA-III's reference-vector count, per objective count. Das-Dennis counts
+# (Deb and Jain 2014 at m = 3, 5; the RVEA article's family at m = 4, 6; boundary layers at 8, 10).
+population_size: {3: 91, 4: 120, 5: 210, 6: 132, 7: 126, 8: 120, 9: 156, 10: 220, 11: 220}
+
+# --------------------------------------------------------------------------------------------------
+# Problems. `xover/problems.py` expands these into instances with stable slugs.
+# --------------------------------------------------------------------------------------------------
+suites:
+  benchmark:
+    problems: [dtlz1, dtlz2, dtlz3, dtlz4, dtlz5, dtlz6, dtlz7,
+               wfg1, wfg2, wfg3, wfg4, wfg5, wfg6, wfg7, wfg8, wfg9]
+    blocks: [[3, 12], [3, 30], [5, 12], [8, 24]]      # (m, n_var); WFG needs n_var >= 2(m-1)+1
+
+  real_world:
+    min_objectives: 3
+    subset_cap: 6              # at most this many objective subsets per base problem
+    subset_seed: 20260826      # fixes which subsets are drawn
+    # Each base problem: a DESDEO test-problem function, its keyword arguments, and objective subsets
+    # that must be included whatever the sampler draws.
+    bases:
+      re31: {func: re31}
+      re32: {func: re32}
+      re33: {func: re33}
+      re34: {func: re34}
+      re37: {func: re37}
+      re41: {func: re41}
+      re42: {func: re42}
+      rocket_injector_design: {func: rocket_injector_design, kwargs: {original_version: true}}
+      re61: {func: re61}
+      river_pollution:
+        func: river_pollution_problem
+        kwargs: {five_objective_variant: true}
+        required: [[f_1, f_2, f_3, f_4]]
+    # The folded GAA problem (ten performance objectives plus the folded constraint violation f_11),
+    # on a nested ladder chosen from its measured objective conflict.
+    gaa_ladder:
+      3: [f_5, f_8, f_11]
+      5: [f_2, f_5, f_8, f_10, f_11]
+      7: [f_2, f_4, f_5, f_8, f_9, f_10, f_11]
+      9: [f_2, f_3, f_4, f_5, f_7, f_8, f_9, f_10, f_11]
+      11: all
+    metallappl_variants:
+      mop1: [YS, UTS, ELON, CHARPY, CE, COST]
+      mop2: [YS, UTS, ELON, CE, COST]
+      ys_uts_elon: [YS, UTS, ELON]
+      ys_elon_ce: [YS, ELON, CE]
+      ys_ce_cost: [YS, CE, COST]
+    exclude: []                # slugs removed after sampling, so other slugs do not shift
+
+  # ZCAT (Zapotecas-Martinez et al. 2023): levels 1-4 cross separability with modality, and
+  # `linked` switches on the complicated Pareto set.
+  zcat:
+    problems: [zcat1, zcat3, zcat11, zcat14, zcat18]
+    levels: [1, 2, 3, 4]
+    linked: [false, true]
+    m: 3
+    n_var: 30
+
+  # CEC 2009 UF11 and UF12 (R2_DTLZ2_M5, R2_DTLZ3_M5), each with an M = I control.
+  rotated_dtlz:
+    bases: [dtlz2, dtlz3]
+    rotated: [false, true]
+
+# --------------------------------------------------------------------------------------------------
+# Algorithms and operators. Crossovers and mutations are DESDEO option dictionaries, validated
+# against `CrossoverOptions` / `MutationOptions` when the workflow is built.
+# --------------------------------------------------------------------------------------------------
+algorithms:
+  nsga3: {reference_vectors: s_energy, vector_type: planar}
+  nsga2: {tournament_size: 2}
+  ibea: {kappa: 0.05, binary_indicator: eps, tournament_size: 2}
+
+crossovers:
+  # Four SBX arms, each a framework's shipped operator, plus a control with the uniform swap off.
+  sbx_default: {name: SimulatedBinaryCrossover, pair_xover_probability: 1.0, xover_probability: 0.5,
+                xover_distribution: 30.0, truncated: true, uniform_xover_probability: 0.5,
+                swap_uncrossed_variables: false}
+  sbx_platemo: {name: SimulatedBinaryCrossover, pair_xover_probability: 1.0, xover_probability: 0.5,
+                xover_distribution: 30.0, truncated: false, uniform_xover_probability: 0.5,
+                swap_uncrossed_variables: false}
+  sbx_jmetal: {name: SimulatedBinaryCrossover, pair_xover_probability: 1.0, xover_probability: 0.5,
+               xover_distribution: 20.0, truncated: true, uniform_xover_probability: 0.5,
+               swap_uncrossed_variables: true}
+  sbx_no_uniform: {name: SimulatedBinaryCrossover, pair_xover_probability: 1.0, xover_probability: 0.5,
+                   xover_distribution: 30.0, truncated: true, uniform_xover_probability: 0.0,
+                   swap_uncrossed_variables: false}
+  blend: {name: BlendAlphaCrossover, alpha: 0.5, repeats: 2, sample_each_component: true}
+  bex: {name: BoundedExponentialCrossover, xover_probability: 1.0, lambda_: 0.1, uniform_xover_probability: 0.0}
+  bex_uniform: {name: BoundedExponentialCrossover, xover_probability: 1.0, lambda_: 0.1,
+                uniform_xover_probability: 0.5}
+  uniform: {name: UniformCrossover, pair_xover_probability: 1.0, uniform_xover_probability: 0.5}
+  sax: {name: SingleArithmeticCrossover, xover_probability: 1.0}
+  de: {name: DifferentialEvolutionCrossover, scaling_factor: 0.5, xover_probability: 0.9}
+  pcx: {name: ParentCentricCrossover, sigma_zeta: 0.1, sigma_eta: 0.1}
+  composite:
+    name: CompositeCrossover
+    crossovers:
+      - {name: SimulatedBinaryCrossover, pair_xover_probability: 1.0, xover_probability: 0.5,
+         xover_distribution: 30.0, truncated: true, uniform_xover_probability: 0.5,
+         swap_uncrossed_variables: false}
+      - {name: BoundedExponentialCrossover, xover_probability: 1.0, lambda_: 0.1, uniform_xover_probability: 0.5}
+      - {name: DifferentialEvolutionCrossover, scaling_factor: 0.5, xover_probability: 0.9}
+  # Both probabilities at zero return the parents unchanged.
+  none: {name: SimulatedBinaryCrossover, pair_xover_probability: 0.0, xover_probability: 0.0,
+         xover_distribution: 30.0, truncated: true, uniform_xover_probability: 0.5,
+         swap_uncrossed_variables: false}
+
+mutations:
+  # mutation_probability: null means 1/n_var.
+  polynomial: {name: BoundedPolynomialMutation, mutation_probability: null, distribution_index: 20.0}
+
+# --------------------------------------------------------------------------------------------------
+# Phase 1: the evaluation budget per instance. The smallest budget at which the median IGD+ of this
+# configuration is within `tolerance` of its own `max_evaluations` quality, rounded up and clipped.
+# --------------------------------------------------------------------------------------------------
+calibration:
+  algorithm: nsga3
+  crossover: sbx_default
+  mutation: polynomial
+  population: 100            # fixed across instances, so the budgets are comparable
+  seeds: [0, 1, 2, 3, 4]
+  max_evaluations: 200000
+  n_checkpoints: 100         # log-spaced quality checkpoints
+  tolerance: 1.02
+  rounding: 5000
+  floor: 10000
+  ceiling: 200000
+
+# --------------------------------------------------------------------------------------------------
+# Phase 2: reference fronts, built from the merged non-dominated archives of these runs. `all` means
+# the corresponding list under `run`. A front built from a subset of arms favours that subset.
+# --------------------------------------------------------------------------------------------------
+reference_front:
+  algorithms: all
+  crossovers: all
+  mutations: all
+  seeds: [0, 1]
+  subset_cap: {3: 1500, 4: 2000, 6: 3000, default: 4000}   # points kept per objective count
+
+# --------------------------------------------------------------------------------------------------
+# Phase 4: indicators.
+# --------------------------------------------------------------------------------------------------
+indicators:
+  exact_hv_max_m: 5          # exact hypervolume up to this m, moocore.hv_approx above
+  r2_weights: 100            # s-energy weight vectors for R2
+
+# --------------------------------------------------------------------------------------------------
+# Phase 5: landscape features, on one Latin-hypercube sample per instance, shared by every run of it.
+# --------------------------------------------------------------------------------------------------
+landscape:
+  sample_size_per_var: 200   # n = 200 d, as in Liefooghe et al. (GECCO 2021)
+  sample_seed: 0
+  ela_sets: [calculate_ela_meta, calculate_ela_distribution, calculate_ela_level, calculate_pca,
+             calculate_nbc, calculate_dispersion, calculate_information_content,
+             calculate_fitness_distance_correlation]
+  max_missing: 0.05          # drop a feature missing on more than this fraction of instances
+  min_variance: 1.0e-12
+  correlation_cap: 0.95      # features correlated above this are represented by one of them
