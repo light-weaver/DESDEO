@@ -7,6 +7,7 @@ extend = "../../pyproject.toml"
     "S101",     # asserts are how a test asserts
     "PLR2004",  # a magic value in an assertion is the expected value
     "SLF001",   # tests may reach into a module's internals
+    "D103",     # a test name says what it checks
 ]
 "*.py" = [
     "T201",     # scripts report progress by printing

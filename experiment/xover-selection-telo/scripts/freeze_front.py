@@ -1,9 +1,4 @@
-"""Phase 2: merge one instance's archives into its frozen reference front.
-
-Archives are merged in the order of their run names (`{instance}__{algorithm}__{crossover}__
-{mutation}__s{seed}`, sorted as strings), which keeps the front independent of how the files happen
-to be listed.
-"""
+"""Phase 2: merge one instance's archives into its frozen reference front."""
 
 from pathlib import Path
 
@@ -32,7 +27,7 @@ if len(archives) != expected:
 
 population = design.population_size(config, instance.m)
 front = fronts.freeze(
-    [archives[key].astype(float) for key in sorted(archives) if len(archives[key])],
+    archives,
     cap=design.subset_cap(config, instance.m),
     hv_reference=hv_reference_component(instance.m, population),
     exact_hv_max_m=config["indicators"]["exact_hv_max_m"],

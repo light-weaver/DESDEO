@@ -154,20 +154,22 @@ def _distance_to(scaled: np.ndarray, point: np.ndarray) -> np.ndarray:
 
 
 def freeze(
-    archives: list[np.ndarray],
+    archives: dict[str, np.ndarray],
     *,
     cap: int,
     hv_reference: float,
     exact_hv_max_m: int,
 ) -> ReferenceFront:
-    """Build a reference front from archives and attach `HV(R)`, its hypervolume in its own unit box.
+    """Build a reference front from named archives and attach `HV(R)`, its hypervolume in its own box.
 
-    The archives are merged in the order given; the workflow sorts them by run, so the front does not
-    depend on the order files happen to be listed in.
+    Archives are merged in the order of their names, sorted as strings. The workflow names each one
+    `{instance}__{algorithm}__{crossover}__{mutation}__s{seed}`, so the front does not depend on the
+    order files happen to be listed in. Empty archives are skipped.
     """
     from xover.indicators import hypervolume
 
-    front = build_reference_front(archives, cap=cap)
+    pools = [np.asarray(archives[name], dtype=float) for name in sorted(archives) if len(archives[name])]
+    front = build_reference_front(pools, cap=cap)
     m = front.points.shape[1]
     value = hypervolume(front.normalise(front.points), np.full(m, hv_reference), exact_hv_max_m)
     return replace(front, hypervolume=float(value))
