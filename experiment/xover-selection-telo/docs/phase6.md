@@ -57,6 +57,7 @@ already on it.
   splits. Its tests pin the old 149-instance set; the re-admitted `re41_m3_f_2-f_3-f_4` gets re41's
   labels.
 - **`plotstyle.py`**: the palette and the `is_sbx` / `has_uniform` predicates that decide each arm's tier.
+  `de_current` needs a colour of its own, and `analysis_pairs.TRACKED` should list it.
 
 ## The analyses, in the order to port them
 
@@ -66,14 +67,14 @@ algorithm), arms ordered by within-block ranks, the four Pareto-compliant indica
 
 | Script (old) | Question | Method and output | In the EMO draft |
 |---|---|---|---|
-| `analysis_tier.py` | Does the mixing side outrank the rest? Each arm's tier is read from its options: `mixing` (`sbx_default`, `sbx_platemo`, `sbx_jmetal`, `bex_uniform`, `uniform`), `portfolio` (`composite`), `de`, `off` (`none`) or `non_mixing`; the mixing side is the first two | Per indicator: cuts by algorithm and by every problem property; whether the top k places are all mixing-side; between-crossover sum-of-squares share of the split, with and without `none`/`de`/`composite`; paired ablations (e.g. `sbx_default` vs `sbx_no_uniform`); budget consistency (τ between fractions); step-size control (does offspring step explain the split?); mechanism by tier. → `tier.json` | §4.1 Fig. 1, Fig. 2; §4.4 ablations, step control, mechanism. **The claim.** |
+| `analysis_tier.py` | Does the mixing side outrank the rest? Each arm's tier is read from its options: `mixing` (`sbx_default`, `sbx_platemo`, `sbx_jmetal`, `bex_uniform`, `uniform`), `portfolio` (`composite`), `de`, `off` (`none`) or `non_mixing` (which includes `de_current`); the mixing side is the first two | Per indicator: cuts by algorithm and by every problem property; whether the top k places are all mixing-side; between-crossover sum-of-squares share of the split, with and without `none`/`de`/`de_current`/`composite`; the top-k and share tests repeated on SPEA2 alone and AGE-MOEA-II alone; paired ablations (e.g. `sbx_default` vs `sbx_no_uniform`); budget consistency (τ between fractions); step-size control (does offspring step explain the split?); mechanism by tier. → `tier.json` | §4.1 Fig. 1, Fig. 2; §4.4 ablations, step control, mechanism. **The claim.** |
 | `analysis_splits.py` | Does the ordering survive problem properties? | For each split in `SPLITS`: block ranks on each side, τ between sides, permutation p (999 whole-instance shuffles); per algorithm and within m = 3; per-side Friedman/CD; performance profiles from `log_ratios`. → `splits.json` | §4.3 Table 2, Fig. 3, Fig. 4 |
-| `analysis_rq7_algorithms.py` | Do algorithms differ, and does the best crossover depend on the algorithm? | Classical and generalised ω² of algorithm, crossover and their interaction; Friedman over algorithms; per-algorithm orderings and τ between them; whether the pooled winner wins inside each algorithm. → `rq7_algorithms.json` | §4.1 ω² values, §4.2 |
+| `analysis_rq7_algorithms.py` | Do algorithms differ, and does the best crossover depend on the algorithm? | Classical and generalised ω² of algorithm, crossover and their interaction, over 5 algorithms; Friedman over algorithms; per-algorithm orderings and τ between them; whether the pooled winner wins inside each algorithm. → `rq7_algorithms.json` | §4.1 ω² values, §4.2 |
 | `analysis_rq10_indicators.py` | Does the answer depend on the indicator? | Per-indicator orderings, pairwise τ, agreement within the compliant four (PCA/PERMANOVA are companion-paper material). → `rq10_indicators.json` | §4.1 Fig. 2a |
 | `analysis_rq8_anytime.py` | Does the ranking depend on when it is measured? | τ of each fraction's ranking against the final one; earliest fraction from which τ ≥ 0.95 holds to the end. → `rq8_anytime.json` | §4.1 "settles at 55 %" |
 | `analysis_rq9_aocc.py` | Convergence speed vs final quality | AOCC on `hv_relative` against endpoint regret on `igd_plus`; framework spread (range of SBX-arm medians ÷ range of others). → `rq9_aocc.json` | §4.4 spread ratios |
 | `analysis_rq2_factors.py` | How much does the crossover matter, and is the best one predictable? | On the plane: Friedman, Holm-Wilcoxon, CD, oracle gain against the single best arm, bootstrap power by number of instances and by base problem. The factorial-core block (ω² of crossover vs mutation, ART, `rq2_gate`) **has no data any more**. → `rq2_factors.json` | §4.1 oracle and SBS/VBS, §4.4 power; §3's mutation ω² |
-| `analysis_rq1_frameworks.py` | Do the SBX variants frameworks ship differ? | Hand-curated variant table (V1-V8 across ten frameworks); inheritance diagnostics driving `SimulatedBinaryCrossover.do` directly on DTLZ2 (identity retention, linkage, step size); performance of the SBX arms. → `rq1_frameworks.json` | §4.4 Table 3 |
+| `analysis_rq1_frameworks.py` | Do the SBX variants frameworks ship differ? | Hand-curated variant table (V1-V8 across ten frameworks), to be read with PLAN.md's library check: `sbx_platemo` is PlatEMO's operator at η = 30, not its default 20, and both `sbx_default` and `sbx_jmetal` use a pair rate of 1; inheritance diagnostics driving `SimulatedBinaryCrossover.do` directly on DTLZ2 (identity retention, linkage, step size); performance of the SBX arms. → `rq1_frameworks.json` | §4.4 Table 3 |
 | `analysis_pairs.py` | Do the switches in the ZCAT and rotated-DTLZ suites (separability, Pareto-set linkage, rotation) weaken the mixing tier? | Matched pairs (`zcat_arm.PAIRS`, `rotated_dtlz.PAIRS`): tier summary per instance, counts of weakened / strengthened / reversed. → `pairs.json` | scope and threats sections |
 | `analysis_rq3_rule.py`, `analysis_rq4_transfer.py` | Can landscape features predict the best arm? Do benchmark and real-world problems differ? | Multi-output decision tree (depth 3) on the instance × crossover regret matrix, leave-one-base-out CV; benchmark ↔ real-world transfer; energy distance between feature distributions | Cut from the EMO paper (companion material). Inputs now come from phase 5 |
 
@@ -111,6 +112,9 @@ Each of these produced wrong numbers at least once (bug numbers refer to `.wolf/
    inflates interaction terms.
 8. ω² results serialised through `e.__dict__` (rq7, rq8, rq9) are unrounded, while the others use
    `.to_dict()`. Use one.
+9. **`tier` matches `DifferentialEvolutionCrossover` by its exact name.** `de_current` is a different
+   class, so it falls through to `non_mixing`. PLAN.md wants that outcome on purpose; give it an
+   explicit branch, so the tier of the arm that can falsify the claim does not rest on a fall-through.
 
 ## Inputs the paper text relied on that this pipeline no longer produces
 

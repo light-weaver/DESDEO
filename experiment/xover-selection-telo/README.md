@@ -5,9 +5,10 @@ evaluation budgets, reference fronts, population dumps of every run, quality ind
 landscape features. It is a [Snakemake](https://snakemake.readthedocs.io) workflow over a small
 Python package (`xover/`) built on [DESDEO](https://github.com/industrial-optimization-group/DESDEO).
 
-The study compares 13 real-coded crossover operators inside 3 algorithms (NSGA-III, NSGA-II, IBEA)
-on 150 problem instances with 3 to 11 objectives (108 benchmark instances from DTLZ, WFG, ZCAT and
-rotated DTLZ, and 42 real-world ones), at 11 seeds per configuration: 64 350 runs.
+The study compares 14 real-coded crossover operators inside 5 algorithms (NSGA-III, NSGA-II, IBEA,
+SPEA2, AGE-MOEA-II) on 150 problem instances with 3 to 11 objectives (108 benchmark instances from
+DTLZ, WFG, ZCAT and rotated DTLZ, and 42 real-world ones), at 11 seeds per configuration: 115 500
+runs.
 
 ## Running it
 
@@ -107,7 +108,10 @@ A run dump (`.npz`, plain float32/int32 arrays) holds:
   numpy, scipy, polars, moocore, pymoo and scikit-learn.
 - `tests/test_legacy_equivalence.py` shows that this pipeline produces bit-identical run dumps,
   fronts, indicators and calibration results to the code the EMO-paper version of the study ran
-  (branch `experiment/xover-selection-2`), given the same inputs.
+  (branch `experiment/xover-selection-2`), given the same inputs. This covers the EMO paper's 3
+  algorithms and 13 crossovers; SPEA2, AGE-MOEA-II and `de_current` have no old code to match.
+- `checks/sbx_libraries.py` compares the SBX arms with pymoo, PlatEMO and jMetal, running each
+  library's own code. [PLAN.md](PLAN.md) records the result, including the parameters that differ.
 
 ```bash
 uv run pytest tests                                                                 # about 10 s
@@ -119,5 +123,6 @@ LEGACY_DIR=/tmp/legacy/experiment/xover-selection uv run pytest tests           
 
 The EMO-paper version of the study ran a 105-instance grid on one 128-core node of CSC's Roihu
 cluster. Its 8 034 front runs took 1.21 h and its 61 776 grid runs took 140 min. This version runs
-150 instances (11 700 front runs, 64 350 grid runs) and adds calibration and landscape features.
-GAA is the expensive problem, at about 27 times the mean cost per run.
+150 instances (21 000 front runs, 115 500 grid runs) and adds calibration and landscape features.
+GAA is the expensive problem, at about 27 times the mean cost per run. [PLAN.md](PLAN.md) has the
+estimate and the measured cost of each algorithm.
