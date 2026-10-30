@@ -1912,42 +1912,21 @@ def _distinct_indices(rng: np.random.Generator, targets: np.ndarray, pop_size: i
     return chosen
 
 
-class DifferentialEvolutionCrossover(BaseCrossover):
-    """Differential evolution recombination, DE/rand/1/bin.
+class BaseDifferentialEvolutionCrossover(BaseCrossover):
+    """The parts shared by the differential evolution crossovers.
 
-    For each target vector the operator forms a mutant `v = x_r1 + F * (x_r2 - x_r3)` from three
-    distinct other population members, then mixes `v` with the target componentwise at rate
-    `xover_probability`, forcing at least one component to come from `v` so that no offspring is a
-    copy of its target.
-
-    What separates this from the other continuous operators here is *which* individuals set the step
-    size. Every other operator displaces an offspring relative to the parents being recombined, so a
-    solution far from the rest of the population gets a large step and one inside a tight cluster
-    gets a small one. DE's donors are unrelated to the target, so its step is set by the spread of
-    the population at large. Measured on a population of 60 holding one outlier: the outlier's
-    offspring moves 14.3x further than a cluster member's under DE, against 2.1x under SBX.
-
-    All three of SBX, PCX and DE do contract as the population converges -- SBX's displacement is
-    proportional to the parent difference, so it is not the fixed-versus-adaptive contrast it is
-    sometimes described as.
+    A subclass draws the donors and decides which components come from the mutant. This class does
+    the rest: it validates the parameters, picks the targets, clips the offspring onto the bounds and
+    reports the operator's state.
 
     Unlike the other operators in this module, the returned offspring are **target aligned**: row `i`
-    of the output is the child of `to_mate[i]`. The other operators either stack all first children
-    ahead of all second children or interleave them, so lineage is not generically traceable; see the
-    note on `BaseCrossover.do`.
-
-    References:
-        Storn, R., & Price, K. (1997). Differential Evolution - A Simple and Efficient Heuristic for
-            Global Optimization over Continuous Spaces. Journal of Global Optimization, 11(4),
-            341-359. https://doi.org/10.1023/A:1008202821328
-
-        Kukkonen, S., & Lampinen, J. (2005). GDE3: The third evolution step of generalized
-            differential evolution. In 2005 IEEE Congress on Evolutionary Computation (pp. 443-450).
-            https://doi.org/10.1109/CEC.2005.1554717
+    of the output is the offspring of target `to_mate[i]`. The other operators either stack all first
+    offspring ahead of all second offspring or interleave them, so lineage is not generically
+    traceable; see the note on `BaseCrossover.do`.
     """
 
-    _MIN_POPULATION = 4
-    """A target plus three distinct donors."""
+    _MIN_POPULATION: int
+    """The smallest population a subclass can draw its donors from."""
 
     @property
     def provided_topics(self) -> dict[int, Sequence[CrossoverMessageTopics]]:
@@ -1978,10 +1957,10 @@ class DifferentialEvolutionCrossover(BaseCrossover):
         verbosity: int,
         publisher: Publisher,
         seed: int,
-        scaling_factor: float = 0.5,
-        xover_probability: float = 0.9,
+        scaling_factor: float,
+        xover_probability: float,
     ):
-        """Initialize the differential evolution crossover operator.
+        """Initialize a differential evolution crossover operator.
 
         Args:
             problem (Problem): the problem object.
@@ -1989,16 +1968,14 @@ class DifferentialEvolutionCrossover(BaseCrossover):
                 what topics are provided by the operator at each verbosity level.
             publisher (Publisher): the publisher to which the operator will publish messages.
             seed (int): the seed used in the random number generator.
-            scaling_factor (float, optional): the factor `F` applied to the difference vector.
-                Defaults to 0.5, the midpoint of the 0.4-1.0 range Storn and Price recommend.
-            xover_probability (float, optional): the binomial crossover rate `CR`, the per-component
-                probability that the offspring takes the mutant's value rather than the target's.
-                Defaults to 0.9.
+            scaling_factor (float): the factor `F` applied to the difference vector.
+            xover_probability (float): the crossover rate `CR`, the per-component probability that the
+                offspring takes the mutant's value rather than the target's.
         """
         super().__init__(problem=problem, verbosity=verbosity, publisher=publisher, seed=seed)
 
         if problem.variable_domain is not VariableDomainTypeEnum.continuous:
-            raise ValueError("DifferentialEvolutionCrossover only works on continuous problems.")
+            raise ValueError(f"{type(self).__name__} only works on continuous problems.")
         if scaling_factor <= 0:
             raise ValueError("scaling_factor must be positive.")
         if not 0 <= xover_probability <= 1:
@@ -2007,13 +1984,25 @@ class DifferentialEvolutionCrossover(BaseCrossover):
         self.scaling_factor = scaling_factor
         self.xover_probability = xover_probability
 
+    @abstractmethod
+    def _recombine(self, whole: np.ndarray, targets: np.ndarray) -> np.ndarray:
+        """Make one offspring per target, before clipping.
+
+        Args:
+            whole (np.ndarray): the decision vectors of the whole population.
+            targets (np.ndarray): the row of `whole` that each offspring is made for.
+
+        Returns:
+            np.ndarray: the offspring, row `i` belonging to `targets[i]`.
+        """
+
     def do(
         self,
         *,
         population: pl.DataFrame,
         to_mate: list[int] | None = None,
     ) -> pl.DataFrame:
-        """Perform DE/rand/1/bin crossover, producing one offspring per target.
+        """Perform the crossover, producing one offspring per target.
 
         Args:
             population (pl.DataFrame): the population to perform the crossover with. The DataFrame
@@ -2029,28 +2018,20 @@ class DifferentialEvolutionCrossover(BaseCrossover):
         pop_size = whole.shape[0]
         if pop_size < self._MIN_POPULATION:
             raise ValueError(
-                f"DifferentialEvolutionCrossover needs at least {self._MIN_POPULATION} individuals, "
-                f"a target and three distinct donors, but the population holds {pop_size}."
+                f"{type(self).__name__} needs at least {self._MIN_POPULATION} individuals, "
+                f"but the population holds {pop_size}."
             )
 
         # `get_parents` is not used: it pads an odd mating pool with a duplicate so that pairs come
-        # out even, and DE has no pairs. The donors are drawn from the whole population, which is
-        # what DE/rand/1 specifies, so `to_mate` selects targets only.
+        # out even, and DE has no pairs. The donors are drawn from the whole population, so `to_mate`
+        # selects targets only.
         targets = np.arange(pop_size) if to_mate is None else np.asarray(to_mate, dtype=np.int64)
-        num_offspring, num_var = targets.shape[0], whole.shape[1]
         self.parent_population = population[targets.tolist()]
 
-        donors = _distinct_indices(self.rng, targets, pop_size, k=3)
-        mutant = whole[donors[:, 0]] + self.scaling_factor * (whole[donors[:, 1]] - whole[donors[:, 2]])
-
-        take_mutant = self.rng.random((num_offspring, num_var)) < self.xover_probability
-        # One component is always inherited from the mutant, so an offspring is never a copy of its
-        # target even at xover_probability = 0. This is the `jrand` of the original formulation.
-        forced = self.rng.integers(0, num_var, size=num_offspring)
-        take_mutant[np.arange(num_offspring), forced] = True
-
-        offsprings = np.where(take_mutant, mutant, whole[targets])
-        offsprings = np.clip(offsprings, np.asarray(self.lower_bounds), np.asarray(self.upper_bounds))
+        # A variable without a bound has None here, which np.clip cannot compare against.
+        lower_bounds = [-np.inf if bound is None else bound for bound in self.lower_bounds]
+        upper_bounds = [np.inf if bound is None else bound for bound in self.upper_bounds]
+        offsprings = np.clip(self._recombine(whole, targets), lower_bounds, upper_bounds)
 
         self.offspring_population = pl.from_numpy(offsprings, schema=self.variable_symbols, orient="row")
         self.notify()
@@ -2095,6 +2076,165 @@ class DifferentialEvolutionCrossover(BaseCrossover):
                 ]
             )
         return msgs
+
+
+class DifferentialEvolutionCrossover(BaseDifferentialEvolutionCrossover):
+    """Differential evolution recombination, DE/rand/1/bin.
+
+    For each target vector the operator forms a mutant `v = x_r1 + F * (x_r2 - x_r3)` from three
+    distinct other population members, then mixes `v` with the target componentwise at rate
+    `xover_probability`, forcing at least one component to come from `v` so that no offspring is a
+    copy of its target.
+
+    What separates this from the other continuous operators here is *which* individuals set the step
+    size. Every other operator displaces an offspring relative to the parents being recombined, so a
+    solution far from the rest of the population gets a large step and one inside a tight cluster
+    gets a small one. DE's donors are unrelated to the target, so its step is set by the spread of
+    the population at large. Measured on a population of 60 holding one outlier: the outlier's
+    offspring moves 14.3x further than a cluster member's under DE, against 2.1x under SBX.
+
+    All three of SBX, PCX and DE do contract as the population converges -- SBX's displacement is
+    proportional to the parent difference, so it is not the fixed-versus-adaptive contrast it is
+    sometimes described as.
+
+    References:
+        Storn, R., & Price, K. (1997). Differential Evolution - A Simple and Efficient Heuristic for
+            Global Optimization over Continuous Spaces. Journal of Global Optimization, 11(4),
+            341-359. https://doi.org/10.1023/A:1008202821328
+
+        Kukkonen, S., & Lampinen, J. (2005). GDE3: The third evolution step of generalized
+            differential evolution. In 2005 IEEE Congress on Evolutionary Computation (pp. 443-450).
+            https://doi.org/10.1109/CEC.2005.1554717
+    """
+
+    _MIN_POPULATION = 4
+    """A target plus three distinct donors."""
+
+    def __init__(
+        self,
+        *,
+        problem: Problem,
+        verbosity: int,
+        publisher: Publisher,
+        seed: int,
+        scaling_factor: float = 0.5,
+        xover_probability: float = 0.9,
+    ):
+        """Initialize the differential evolution crossover operator.
+
+        Args:
+            problem (Problem): the problem object.
+            verbosity (int): the verbosity level of the component. The keys in `provided_topics` tell
+                what topics are provided by the operator at each verbosity level.
+            publisher (Publisher): the publisher to which the operator will publish messages.
+            seed (int): the seed used in the random number generator.
+            scaling_factor (float, optional): the factor `F` applied to the difference vector.
+                Defaults to 0.5, which Storn and Price call a good initial choice.
+            xover_probability (float, optional): the binomial crossover rate `CR`, the per-component
+                probability that the offspring takes the mutant's value rather than the target's.
+                Defaults to 0.9.
+        """
+        super().__init__(
+            problem=problem,
+            verbosity=verbosity,
+            publisher=publisher,
+            seed=seed,
+            scaling_factor=scaling_factor,
+            xover_probability=xover_probability,
+        )
+
+    def _recombine(self, whole: np.ndarray, targets: np.ndarray) -> np.ndarray:
+        """Make one DE/rand/1/bin offspring per target."""
+        donors = _distinct_indices(self.rng, targets, whole.shape[0], k=3)
+        mutant = whole[donors[:, 0]] + self.scaling_factor * (whole[donors[:, 1]] - whole[donors[:, 2]])
+
+        num_offspring, num_var = targets.shape[0], whole.shape[1]
+        take_mutant = self.rng.random((num_offspring, num_var)) < self.xover_probability
+        # One component is always inherited from the mutant, so an offspring is never a copy of its
+        # target even at xover_probability = 0. This is the `jrand` of the original formulation.
+        forced = self.rng.integers(0, num_var, size=num_offspring)
+        take_mutant[np.arange(num_offspring), forced] = True
+
+        return np.where(take_mutant, mutant, whole[targets])
+
+
+class DifferentialEvolutionCurrentCrossover(BaseDifferentialEvolutionCrossover):
+    """Differential evolution recombination with the target as base vector, DE/current/1.
+
+    This is the operator of MOEA/D-DE. For each target vector `x_i` the operator forms a mutant
+    `v = x_i + F * (x_r1 - x_r2)` and takes each component from `v` with probability
+    `xover_probability`, and from the target otherwise. At the default rate of 1 every component comes
+    from `v`, which makes the operator invariant to rotations of the decision space (Li and Zhang
+    2009, Section III). Li and Zhang call the indices `r2` and `r3` and write `r1 = i`.
+
+    It differs from
+    [DifferentialEvolutionCrossover][desdeo.emo.operators.crossover.DifferentialEvolutionCrossover]
+    in more than the base vector:
+
+    - The two donors differ from each other, but either may be the target. Li and Zhang state no
+      restriction, and this is what their C++ code does. Tanabe and Ishibuchi (2019) call this
+      selection WPR and trace it to a bug in that code. In their Table 4 it still beats excluding the
+      target at two, three and five objectives, and loses at four. When a donor is the target, the
+      subproblem moves along the line through its own solution and the other donor.
+    - No component is forced to come from the mutant, following equation (6) of Li and Zhang, so at
+      `xover_probability = 0` the offspring is a copy of its target.
+
+    References:
+        Li, H., & Zhang, Q. (2009). Multiobjective optimization problems with complicated Pareto
+            sets, MOEA/D and NSGA-II. IEEE Transactions on Evolutionary Computation, 13(2), 284-302.
+            https://doi.org/10.1109/TEVC.2008.925798
+
+        Tanabe, R., & Ishibuchi, H. (2019). Review and analysis of three components of the
+            differential evolution mutation operator in MOEA/D-DE. Soft Computing, 23(23),
+            12843-12857. https://doi.org/10.1007/s00500-019-03842-6
+    """
+
+    _MIN_POPULATION = 2
+    """Two distinct donors, either of which may be the target."""
+
+    def __init__(
+        self,
+        *,
+        problem: Problem,
+        verbosity: int,
+        publisher: Publisher,
+        seed: int,
+        scaling_factor: float = 0.5,
+        xover_probability: float = 1.0,
+    ):
+        """Initialize the DE/current/1 crossover operator.
+
+        Args:
+            problem (Problem): the problem object.
+            verbosity (int): the verbosity level of the component. The keys in `provided_topics` tell
+                what topics are provided by the operator at each verbosity level.
+            publisher (Publisher): the publisher to which the operator will publish messages.
+            seed (int): the seed used in the random number generator.
+            scaling_factor (float, optional): the factor `F` applied to the difference vector.
+                Defaults to 0.5, the value of Li and Zhang's experiments.
+            xover_probability (float, optional): the crossover rate `CR`, the per-component
+                probability that the offspring takes the mutant's value rather than the target's.
+                Defaults to 1.0, the value of Li and Zhang's experiments.
+        """
+        super().__init__(
+            problem=problem,
+            verbosity=verbosity,
+            publisher=publisher,
+            seed=seed,
+            scaling_factor=scaling_factor,
+            xover_probability=xover_probability,
+        )
+
+    def _recombine(self, whole: np.ndarray, targets: np.ndarray) -> np.ndarray:
+        """Make one DE/current/1 offspring per target."""
+        # The second draw skips the first, so the two differ. Neither avoids the target.
+        first = self.rng.integers(0, whole.shape[0], size=targets.shape[0])
+        second = self.rng.integers(0, whole.shape[0] - 1, size=targets.shape[0])
+        second += second >= first
+        mutant = whole[targets] + self.scaling_factor * (whole[first] - whole[second])
+
+        take_mutant = self.rng.random((targets.shape[0], whole.shape[1])) < self.xover_probability
+        return np.where(take_mutant, mutant, whole[targets])
 
 
 class ParentCentricCrossover(BaseCrossover):

@@ -9,7 +9,13 @@ from desdeo.problem.schema import (
     VariableTypeEnum,
 )
 from desdeo.tools.scalarization import add_asf_diff, add_asf_nondiff
-from desdeo.tools.scenarios import append_aggregated_elem, build_combined_scenario_problem, resolve_elem
+from desdeo.tools.scenarios import (
+    append_aggregated_elem,
+    build_combined_scenario_problem,
+    leaf_expr,
+    resolve_elem,
+    weighted_sum_expr,
+)
 
 if TYPE_CHECKING:
     from desdeo.problem.scenario import ScenarioModel
@@ -115,27 +121,12 @@ def add_expected_value(
     new_extra_funcs = list(combined.extra_funcs or [])
     added_symbols: dict[str, str] = {}
 
-    # Variables and constants are direct values; everything else is a computed
-    # expression whose func must be inlined rather than referenced by symbol.
-    _func_bearing = {"objectives", "extra_funcs", "scalarization_funcs", "constraints"}
-
     for sym in symbols:
         info = resolve_elem(sym, symbol_maps, combined, scenario_model)
         expected_sym = f"{prefix}{sym}"
         added_symbols[sym] = expected_sym
 
-        if info.found_type in _func_bearing:
-            terms = [
-                [
-                    "Multiply",
-                    weights[leaf],
-                    next((e.func for e in info.elem_list if e.symbol == info.per_leaf[leaf]), info.per_leaf[leaf]),
-                ]
-                for leaf in weights
-            ]
-        else:
-            terms = [["Multiply", weights[leaf], info.per_leaf[leaf]] for leaf in weights]
-        expected_expr = terms[0] if len(terms) == 1 else ["Add", *terms]
+        expected_expr = weighted_sum_expr(info, weights, combined)
 
         append_aggregated_elem(
             info.found_type,
@@ -182,6 +173,10 @@ def add_conditional_value_at_risk(
     - ``{leaf}_{var_prefix}{sym}_con``: per-leaf LTE constraint sym_s - eta - z_s <= 0.
     - ``{cvar_prefix}{sym}``: CVaR = eta + 1/(1-alpha) * sum_s p_s * z_s.
 
+    For maximized objectives the bad tail is the low values, so the constraints are
+    eta - sym_s - z_s <= 0 and CVaR = eta - 1/(1-alpha) * sum_s p_s * z_s, which stays
+    maximized. Non-objective elements always use the minimization form.
+
     The CVaR element preserves the type of the original element (objective stays
     objective, scalarization function stays scalarization function, anything else
     becomes an extra function).
@@ -221,6 +216,7 @@ def add_conditional_value_at_risk(
         var_sym = f"{var_prefix}{sym}"
         cvar_sym = f"{cvar_prefix}{sym}"
         added_symbols[sym] = cvar_sym
+        is_maximize = info.found_type == "objectives" and info.maximize
 
         # VaR threshold η — shared across all scenarios.
         new_variables.append(
@@ -236,7 +232,7 @@ def add_conditional_value_at_risk(
 
         # Per-leaf auxiliary variables z_s and their constraints.
         leaf_z_syms: dict[str, str] = {}
-        for leaf, leaf_sym in info.per_leaf.items():
+        for leaf in info.per_leaf:
             z_sym = f"{leaf}_{var_sym}"
             leaf_z_syms[leaf] = z_sym
 
@@ -251,14 +247,18 @@ def add_conditional_value_at_risk(
                 )
             )
 
-            # z_s >= sym_s - eta  ->  sym_s - eta - z_s <= 0
-            # Use the func expression of the per-leaf element rather than its symbol.
-            leaf_func = next((e.func for e in info.elem_list if e.symbol == leaf_sym), leaf_sym)
+            # Minimize: z_s >= sym_s - eta; maximize: z_s >= eta - sym_s
+            leaf_func = leaf_expr(info, leaf)
+            con_func = (
+                ["Add", var_sym, ["Negate", leaf_func], ["Negate", z_sym]]
+                if is_maximize
+                else ["Add", leaf_func, ["Negate", var_sym], ["Negate", z_sym]]
+            )
             new_constraints.append(
                 Constraint(
                     name=f"CVaR constraint for {info.elem_name} in {leaf}",
                     symbol=f"{z_sym}_con",
-                    func=["Add", leaf_func, ["Negate", var_sym], ["Negate", z_sym]],
+                    func=con_func,
                     cons_type=ConstraintTypeEnum.LTE,
                     is_linear=info.is_linear,
                     is_convex=info.is_convex,
@@ -266,7 +266,7 @@ def add_conditional_value_at_risk(
                 )
             )
 
-        # CVaR = η + scale · Σ_s p_s · z_s
+        # CVaR = η ± scale · Σ_s p_s · z_s (minus for maximized objectives)
         weighted_z = [["Multiply", weights[leaf], leaf_z_syms[leaf]] for leaf in weights]
         sum_z = weighted_z[0] if len(weighted_z) == 1 else ["Add", *weighted_z]
 
@@ -278,8 +278,8 @@ def add_conditional_value_at_risk(
             name=f"CVaR of {info.elem_name}",
             description=f"CVaR of {info.elem_desc}" if info.elem_desc else f"CVaR of {info.elem_name}",
             symbol=cvar_sym,
-            func=["Add", var_sym, ["Multiply", scale, sum_z]],
-            maximize=info.maximize,
+            func=["Add", var_sym, ["Multiply", -scale if is_maximize else scale, sum_z]],
+            maximize=is_maximize,
             is_linear=True,
             is_convex=True,
             is_twice_differentiable=True,

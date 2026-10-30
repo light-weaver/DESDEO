@@ -4,12 +4,14 @@ import math
 
 import pytest
 
+from desdeo.problem.scenario import Scenario, ScenarioModel
+from desdeo.problem.schema import Constant, Objective, Problem, Variable, VariableTypeEnum
 from desdeo.problem.testproblems import simple_scenario_model
-from desdeo.tools import guess_best_solver
-from desdeo.tools.robust import add_worst_case_robust
+from desdeo.tools import GurobipySolver, guess_best_solver
+from desdeo.tools.robust import add_weighted_scenarios, add_worst_case_robust
 from desdeo.tools.scalarization import add_asf_diff
 from desdeo.tools.scenarios import build_combined_scenario_problem
-from desdeo.tools.stochastic import add_conditional_value_at_risk, add_expected_asf
+from desdeo.tools.stochastic import add_conditional_value_at_risk, add_expected_asf, add_expected_value
 
 _REF = {"f_1": 0.0, "f_2": 0.0, "f_3": 0.0}
 _IDEAL = {"f_1": -100.0, "f_2": -100.0, "f_3": -100.0}
@@ -149,6 +151,62 @@ def test_cvar_asf_auxiliary_variables_nonnegative(cvar_solve_result):
         assert result.optimal_variables[f"{s}_VAR_asf"] >= -1e-6
 
 
+def _cvar_direction_model(maximize: bool) -> ScenarioModel:
+    """Four leaves with f = x + c, x in [0, 1], c = 1..4 and probabilities 0.1..0.4."""
+    base_problem = Problem(
+        name="CVaR direction test problem",
+        description="f = x + c with a per-leaf constant c.",
+        variables=[
+            Variable(name="x", symbol="x", variable_type=VariableTypeEnum.real, lowerbound=0, upperbound=1),
+        ],
+        constants=[Constant(name="c", symbol="c", value=0.0)],
+        objectives=[
+            Objective(
+                name="f",
+                symbol="f",
+                func="x + c",
+                maximize=maximize,
+                is_linear=True,
+                is_convex=True,
+                is_twice_differentiable=True,
+            ),
+        ],
+    )
+    leaves = ["s_1", "s_2", "s_3", "s_4"]
+    return ScenarioModel(
+        scenario_tree={"ROOT": leaves, **{leaf: [] for leaf in leaves}},
+        scenario_probabilities={"s_1": 0.1, "s_2": 0.2, "s_3": 0.3, "s_4": 0.4},
+        base_problem=base_problem,
+        constants=[Constant(name=f"c ({leaf})", symbol="c", value=float(i + 1)) for i, leaf in enumerate(leaves)],
+        scenarios={leaf: Scenario(constants={"c": i}) for i, leaf in enumerate(leaves)},
+    )
+
+
+@pytest.mark.scenario
+@pytest.mark.gurobipy
+@pytest.mark.parametrize(
+    ("maximize", "expected"),
+    [
+        # x = 1, values 2, 3, 4, 5: mean of the lowest 0.5 mass = (0.1*2 + 0.2*3 + 0.2*4) / 0.5
+        (True, 3.2),
+        # x = 0, values 1, 2, 3, 4: mean of the highest 0.5 mass = (0.4*4 + 0.1*3) / 0.5
+        (False, 3.8),
+    ],
+)
+def test_cvar_objective_value_matches_tail_mean(maximize, expected):
+    """Optimising the CVaR of an objective gives the mean of its worst tail in either direction."""
+    model = _cvar_direction_model(maximize)
+    problem, added = add_conditional_value_at_risk(model, ["f"], alpha=0.5)
+    cvar_sym = added["f"]
+
+    result = GurobipySolver(problem).solve(cvar_sym)
+
+    assert result.success
+    for leaf in ("s_1", "s_2", "s_3", "s_4"):
+        assert result.optimal_variables[f"{leaf}_x"] == pytest.approx(1.0 if maximize else 0.0)
+    assert result.optimal_objectives[cvar_sym] == pytest.approx(expected)
+
+
 # ---------------------------------------------------------------------------
 # add_worst_case_robust — solving tests
 # ---------------------------------------------------------------------------
@@ -196,4 +254,89 @@ def test_robust_asf_value_is_finite(robust_solve_result):
 def test_robust_asf_has_shared_variable(robust_solve_result):
     """The result contains the shared (non-anticipative) variable x_1."""
     result, _ = robust_solve_result
+    assert "x_1" in result.optimal_variables
+
+
+# ---------------------------------------------------------------------------
+# add_weighted_scenarios — solving tests
+# ---------------------------------------------------------------------------
+
+_LEAF_WEIGHTS = {"s_1": 0.5, "s_2": 0.3, "s_3": 0.2}
+
+
+@pytest.fixture(name="weighted_asf_problem")
+def weighted_asf_problem_fixture(model):
+    """Combined problem with a user-weighted sum of the per-leaf ASF scalarizations."""
+    asf_base, scal = add_asf_diff(model.base_problem, "asf", _REF, ideal=_IDEAL, nadir=_NADIR)
+    asf_model = model.with_base_problem(problem=asf_base)
+    combined, symbol_maps = build_combined_scenario_problem(asf_model)
+    return add_weighted_scenarios(asf_model, [scal], weights=_LEAF_WEIGHTS, combined=combined, symbol_maps=symbol_maps)
+
+
+@pytest.fixture(name="weighted_solve_result")
+def weighted_solve_result_fixture(weighted_asf_problem):
+    """Solve the weighted-ASF problem and return (result, weighted_symbol)."""
+    problem, added = weighted_asf_problem
+    weighted_sym = added["asf"]
+    solver_class = guess_best_solver(problem)
+    solver = solver_class(problem)
+    return solver.solve(weighted_sym), weighted_sym
+
+
+@pytest.mark.scenario
+@pytest.mark.slow
+def test_weighted_asf_solves_successfully(weighted_solve_result):
+    """The weighted-ASF problem reports a successful solve.
+
+    Regression test: the aggregated scalarization used to reference the per-leaf
+    scalarization symbols instead of inlining their expressions, which no evaluator
+    could resolve because all scalarization functions are computed in one pass.
+    """
+    result, _ = weighted_solve_result
+    assert result.success
+
+
+@pytest.mark.scenario
+@pytest.mark.slow
+def test_weighted_asf_value_is_finite(weighted_solve_result):
+    """The optimal weighted ASF value is a finite number."""
+    result, weighted_sym = weighted_solve_result
+    value = (result.scalarization_values or {}).get(weighted_sym)
+    assert value is not None
+    assert math.isfinite(value)
+
+
+@pytest.mark.scenario
+@pytest.mark.slow
+def test_weighted_asf_matches_expected_value_when_weights_are_probabilities(model):
+    """With the scenario probabilities as weights, the result matches add_expected_value."""
+    asf_base, scal = add_asf_diff(model.base_problem, "asf", _REF, ideal=_IDEAL, nadir=_NADIR)
+    asf_model = model.with_base_problem(problem=asf_base)
+    combined, symbol_maps = build_combined_scenario_problem(asf_model)
+
+    weighted_problem, weighted_added = add_weighted_scenarios(
+        asf_model,
+        [scal],
+        weights=asf_model.leaf_scenarios,
+        combined=combined,
+        symbol_maps=symbol_maps,
+    )
+    expected_problem, expected_added = add_expected_value(asf_model, [scal], combined=combined, symbol_maps=symbol_maps)
+
+    weighted_sym, expected_sym = weighted_added["asf"], expected_added["asf"]
+    weighted_value = guess_best_solver(weighted_problem)(weighted_problem).solve(weighted_sym)
+    expected_value = guess_best_solver(expected_problem)(expected_problem).solve(expected_sym)
+
+    assert weighted_value.success
+    assert expected_value.success
+    assert (weighted_value.scalarization_values or {})[weighted_sym] == pytest.approx(
+        (expected_value.scalarization_values or {})[expected_sym], rel=1e-4
+    )
+
+
+@pytest.mark.scenario
+@pytest.mark.slow
+def test_weighted_asf_has_shared_variable(weighted_solve_result):
+    """The result contains the shared (non-anticipative) variable x_1."""
+    result, _ = weighted_solve_result
     assert "x_1" in result.optimal_variables
