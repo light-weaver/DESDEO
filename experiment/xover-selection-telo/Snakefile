@@ -36,6 +36,8 @@ for variable in (
     "NUMBA_NUM_THREADS",
 ):
     os.environ.setdefault(variable, "1")
+# The EAs call no external solver, and without this every job warns that bonmin, cbc and ipopt are missing.
+os.environ.setdefault("CHECK_EXECUTABLES", "false")
 
 from xover import design  # noqa: E402
 
