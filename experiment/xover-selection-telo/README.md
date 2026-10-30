@@ -29,6 +29,7 @@ The workflow is resumable: interrupt it and run the same command again. A second
 changed reports "Nothing to be done".
 
 On a Slurm cluster, `slurm/run.sh` runs the whole workflow inside one allocation (see its header).
+[setup.md](setup.md) gives the steps for Roihu.
 
 ## The phases
 
