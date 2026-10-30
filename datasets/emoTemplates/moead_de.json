@@ -2,10 +2,9 @@
     "preference": null,
     "template": {
         "crossover": {
-            "name": "DifferentialEvolutionCrossover",
+            "name": "DifferentialEvolutionCurrentCrossover",
             "scaling_factor": 0.5,
-            "xover_probability": 1.0,
-            "base_vector": "target"
+            "xover_probability": 1.0
         },
         "mutation": {
             "name": "BoundedPolynomialMutation",

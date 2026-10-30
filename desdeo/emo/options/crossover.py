@@ -12,6 +12,7 @@ from desdeo.emo.operators.crossover import (
     BoundedExponentialCrossover,
     CompositeCrossover,
     DifferentialEvolutionCrossover,
+    DifferentialEvolutionCurrentCrossover,
     LocalCrossover,
     ParentCentricCrossover,
     SimulatedBinaryCrossover,
@@ -200,18 +201,30 @@ class DifferentialEvolutionCrossoverOptions(BaseModel):
     )
     """The name of the crossover operator."""
     scaling_factor: float = Field(default=0.5, gt=0.0, description="The factor F applied to the difference vector.")
-    """The factor `F` applied to the difference vector `x_r2 - x_r3`. Defaults to 0.5, the midpoint of
-    the 0.4-1.0 range Storn and Price recommend."""
+    """The factor `F` applied to the difference vector `x_r2 - x_r3`. Defaults to 0.5, which Storn and
+    Price call a good initial choice."""
     xover_probability: float = Field(default=0.9, ge=0.0, le=1.0, description="The binomial crossover rate CR.")
     """The binomial crossover rate `CR`: the per-component probability that the offspring takes the
     mutant's value rather than the target's. One component is always taken from the mutant regardless,
     so no offspring is a copy of its target even at 0.0."""
-    base_vector: Literal["random", "target"] = Field(
-        default="random", description="The vector the scaled difference is added to."
+
+
+class DifferentialEvolutionCurrentCrossoverOptions(BaseModel):
+    """Options for Differential Evolution crossover with the target as base vector (DE/current/1)."""
+
+    name: Literal["DifferentialEvolutionCurrentCrossover"] = Field(
+        default="DifferentialEvolutionCurrentCrossover",
+        frozen=True,
+        description="The name of the crossover operator.",
     )
-    """The vector the scaled difference is added to. "random" draws it as a third donor (DE/rand/1);
-    "target" uses the target itself, `x_i + F * (x_r2 - x_r3)`, as MOEA/D-DE does (Li and Zhang
-    2009). Defaults to "random"."""
+    """The name of the crossover operator."""
+    scaling_factor: float = Field(default=0.5, gt=0.0, description="The factor F applied to the difference vector.")
+    """The factor `F` applied to the difference vector `x_r1 - x_r2`. Defaults to 0.5, the value of Li
+    and Zhang's experiments."""
+    xover_probability: float = Field(default=1.0, ge=0.0, le=1.0, description="The crossover rate CR.")
+    """The crossover rate `CR`: the per-component probability that the offspring takes the mutant's
+    value rather than the target's. No component is forced, so at 0.0 the offspring is a copy of its
+    target. Defaults to 1.0, the value of Li and Zhang's experiments."""
 
 
 class ParentCentricCrossoverOptions(BaseModel):
@@ -256,6 +269,7 @@ CrossoverOptions = (
     | LocalCrossoverOptions
     | BoundedExponentialCrossoverOptions
     | DifferentialEvolutionCrossoverOptions
+    | DifferentialEvolutionCurrentCrossoverOptions
     | ParentCentricCrossoverOptions
     | CompositeCrossoverOptions
 )
@@ -287,6 +301,7 @@ def crossover_constructor(
         "LocalCrossover": LocalCrossover,
         "BoundedExponentialCrossover": BoundedExponentialCrossover,
         "DifferentialEvolutionCrossover": DifferentialEvolutionCrossover,
+        "DifferentialEvolutionCurrentCrossover": DifferentialEvolutionCurrentCrossover,
         "ParentCentricCrossover": ParentCentricCrossover,
         "CompositeCrossover": CompositeCrossover,
     }

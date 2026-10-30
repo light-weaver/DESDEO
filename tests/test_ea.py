@@ -1,7 +1,7 @@
 """Tests for Evolutionary Algorithms."""
 
 from contextlib import suppress
-from itertools import combinations, pairwise
+from itertools import combinations, pairwise, permutations
 
 import numpy as np
 import numpy.testing as npt
@@ -17,6 +17,7 @@ from desdeo.emo.operators.crossover import (
     BlendAlphaCrossover,
     BoundedExponentialCrossover,
     DifferentialEvolutionCrossover,
+    DifferentialEvolutionCurrentCrossover,
     LocalCrossover,
     ParentCentricCrossover,
     SimulatedBinaryCrossover,
@@ -95,6 +96,7 @@ from desdeo.emo.options.algorithms import (
 )
 from desdeo.emo.options.crossover import (
     DifferentialEvolutionCrossoverOptions,
+    DifferentialEvolutionCurrentCrossoverOptions,
     ParentCentricCrossoverOptions,
     SimulatedBinaryCrossoverOptions,
     UniformCrossoverOptions,
@@ -120,7 +122,7 @@ from desdeo.emo.options.termination import (
     terminator_constructor,
 )
 from desdeo.emo.options.termination import MaxEvaluationsTerminatorOptions as _MaxEvalOpts
-from desdeo.problem import VariableDomainTypeEnum, VariableTypeEnum
+from desdeo.problem import Objective, Problem, Variable, VariableDomainTypeEnum, VariableTypeEnum
 from desdeo.problem.external import PymooProblemParams, create_pymoo_problem
 from desdeo.problem.testproblems import (
     car_side_impact,
@@ -1135,6 +1137,125 @@ def test_differential_evolution_always_inherits_one_component_from_the_mutant():
     npt.assert_array_equal(differing, np.ones(len(parents), dtype=int))
 
 
+def _de_current_population(n: int) -> tuple[Problem, pl.DataFrame, np.ndarray]:
+    """A problem and a population whose interior points keep offspring of a small F off the bounds."""
+    problem = dtlz2(n_objectives=2, n_variables=4)
+    symbols = [v.symbol for v in problem.get_flattened_variables()]
+    whole = 0.3 + 0.4 * np.random.default_rng(1).random((n, 4))
+    return problem, pl.DataFrame(whole, schema=symbols, orient="row"), whole
+
+
+@pytest.mark.ea
+def test_differential_evolution_current_crossover():
+    """Test whether DE/current/1 produces one offspring per target, all different from the parents."""
+    publisher = Publisher()
+    problem = simple_test_problem()
+    crossover = DifferentialEvolutionCurrentCrossover(problem=problem, publisher=publisher, verbosity=1, seed=0)
+    num_vars = len(crossover.variable_symbols)
+
+    evaluator = EMOEvaluator(problem=problem, publisher=publisher, verbosity=1)
+    generator = RandomGenerator(
+        problem=problem, evaluator=evaluator, publisher=publisher, n_points=10, seed=0, verbosity=1
+    )
+    population, _outputs = generator.do()
+
+    # Odd-length, to prove the operator does not depend on pairing.
+    to_mate = [0, 9, 1, 8, 2]
+    offspring = crossover.do(population=population, to_mate=to_mate)
+
+    assert offspring.shape == (len(to_mate), num_vars)
+    with npt.assert_raises(AssertionError):
+        npt.assert_allclose(population[to_mate], offspring)
+
+
+@pytest.mark.ea
+@pytest.mark.parametrize("n", [3, 6, 20])
+def test_differential_evolution_current_donors_are_distinct_and_may_be_the_target(n: int):
+    """At CR = 1 each step reveals its donors: they differ, and the target is one of them 2/n of the time.
+
+    This is the selection of the authors' C++ code, called WPR by Tanabe and Ishibuchi (2019). The
+    rule of DE/rand/1, which excludes the target, would give a share of zero.
+    """
+    problem, population, whole = _de_current_population(n)
+    draws = 20_000
+    operator = DifferentialEvolutionCurrentCrossover(
+        problem=problem, publisher=Publisher(), verbosity=0, seed=0, scaling_factor=0.25
+    )
+    steps = operator.do(population=population, to_mate=[0] * draws).to_numpy() - whole[0]
+
+    pairs = list(permutations(range(n), 2))
+    differences = np.array([0.25 * (whole[a] - whole[b]) for a, b in pairs])
+    errors = np.linalg.norm(steps[:, None, :] - differences[None, :, :], axis=2)
+
+    npt.assert_allclose(errors.min(axis=1), 0.0, atol=1e-10)  # two equal donors would give a zero step
+    share = np.mean([0 in pairs[row] for row in errors.argmin(axis=1)])
+    npt.assert_allclose(share, 2 / n, atol=0.015)
+
+
+@pytest.mark.ea
+def test_differential_evolution_current_forces_no_component():
+    """At CR = 0 the offspring is its target, and at CR = 0.5 half the components are, without jrand.
+
+    Equation (6) of Li and Zhang (2009) has no forced component. With one, as in DE/rand/1/bin, CR = 0
+    would change a variable in every offspring.
+    """
+    problem, population, whole = _de_current_population(8)
+
+    def offspring(rate: float) -> np.ndarray:
+        operator = DifferentialEvolutionCurrentCrossover(
+            problem=problem, publisher=Publisher(), verbosity=0, seed=0, xover_probability=rate
+        )
+        return operator.do(population=population, to_mate=[0] * 20_000).to_numpy()
+
+    npt.assert_array_equal(offspring(0.0), np.tile(whole[0], (20_000, 1)))
+    # The donors differ, so a component taken from the mutant always moves. With jrand this would be
+    # 0.5 + 0.5 / 4 = 0.625.
+    npt.assert_allclose(np.mean(offspring(0.5) != whole[0]), 0.5, atol=0.01)
+
+
+@pytest.mark.ea
+def test_differential_evolution_current_needs_only_two_individuals():
+    """Two donors suffice, because either may be the target; one individual is too few."""
+    problem, population, whole = _de_current_population(2)
+    operator = DifferentialEvolutionCurrentCrossover(
+        problem=problem, publisher=Publisher(), verbosity=0, seed=0, scaling_factor=0.25
+    )
+
+    offspring = operator.do(population=population, to_mate=[0]).to_numpy()[0]
+    step = np.abs(offspring - whole[0])
+    npt.assert_allclose(step, 0.25 * np.abs(whole[0] - whole[1]))
+
+    with pytest.raises(ValueError, match="at least 2 individuals"):
+        operator.do(population=population[[0]])
+
+
+@pytest.mark.ea
+@pytest.mark.parametrize("crossover", [DifferentialEvolutionCrossover, DifferentialEvolutionCurrentCrossover])
+def test_differential_evolution_treats_a_missing_bound_as_unbounded(crossover):
+    """A variable with no upper bound keeps its value, and the bounded one next to it is still clipped."""
+    variables = [
+        Variable(name="x_0", symbol="x_0", variable_type=VariableTypeEnum.real, lowerbound=0.0, upperbound=None),
+        Variable(name="x_1", symbol="x_1", variable_type=VariableTypeEnum.real, lowerbound=0.0, upperbound=1.0),
+    ]
+    problem = Problem(
+        name="unbounded",
+        description="One variable without an upper bound.",
+        variables=variables,
+        objectives=[Objective(name="f", symbol="f", func=["Add", "x_0", 0.0], maximize=False)],
+    )
+    whole = np.array([[0.0, 0.9], [100.0, 0.1], [300.0, 0.9], [700.0, 0.1], [1000.0, 0.5]])
+    population = pl.DataFrame(whole, schema=["x_0", "x_1"], orient="row")
+    operator = crossover(
+        problem=problem, publisher=Publisher(), verbosity=0, seed=0, scaling_factor=1.0, xover_probability=1.0
+    )
+
+    offspring = operator.do(population=population, to_mate=[1] * 500).to_numpy()
+
+    assert offspring[:, 0].max() > 1000.0
+    assert offspring[:, 1].min() == 0.0
+    assert offspring[:, 1].max() <= 1.0
+
+
 @pytest.mark.ea
 def test_differential_evolution_takes_its_donors_from_the_whole_population():
     """With the difference vector switched off, every offspring is a copy of some *other* member.
@@ -1266,6 +1387,7 @@ def test_parent_centric_crossover_displaces_along_the_centroid_direction():
     ("options", "expected"),
     [
         (DifferentialEvolutionCrossoverOptions(), DifferentialEvolutionCrossover),
+        (DifferentialEvolutionCurrentCrossoverOptions(), DifferentialEvolutionCurrentCrossover),
         (ParentCentricCrossoverOptions(), ParentCentricCrossover),
     ],
 )
@@ -1291,6 +1413,7 @@ ALL_CROSSOVERS = [
     (LocalCrossover, "continuous"),
     (BoundedExponentialCrossover, "continuous"),
     (DifferentialEvolutionCrossover, "continuous"),
+    (DifferentialEvolutionCurrentCrossover, "continuous"),
     (ParentCentricCrossover, "continuous"),
     (UniformCrossover, "continuous"),
     (SinglePointBinaryCrossover, "binary"),
@@ -1305,6 +1428,7 @@ CONTINUOUS_ONLY_CROSSOVERS = [
     LocalCrossover,
     BoundedExponentialCrossover,
     DifferentialEvolutionCrossover,
+    DifferentialEvolutionCurrentCrossover,
     ParentCentricCrossover,
     UniformCrossover,
 ]
@@ -3687,9 +3811,7 @@ def test_moead_template_spends_one_evaluation_per_subproblem(crossover):
     if crossover == "sbx":
         operator = SimulatedBinaryCrossover(problem=problem, publisher=publisher, seed=0, verbosity=1)
     else:
-        operator = DifferentialEvolutionCrossover(
-            problem=problem, publisher=publisher, seed=0, verbosity=1, xover_probability=1.0, base_vector="target"
-        )
+        operator = DifferentialEvolutionCurrentCrossover(problem=problem, publisher=publisher, seed=0, verbosity=1)
     mutation = BoundedPolynomialMutation(problem=problem, publisher=publisher, seed=0, verbosity=1)
     terminator = MaxGenerationsTerminator(6, publisher=publisher)
 
@@ -3709,35 +3831,13 @@ def test_moead_template_spends_one_evaluation_per_subproblem(crossover):
 
 
 @pytest.mark.ea
-def test_moead_de_takes_the_target_as_its_base_vector():
-    """With base_vector="target" and CR = 1, the offspring is x_i + F (x_r2 - x_r3) for two donors.
+def test_moead_de_uses_the_target_as_its_base_vector():
+    """MOEA/D-DE's default operator is DE/current/1, with the parameters of Li and Zhang's experiments."""
+    crossover = moead_de_options().template.crossover
 
-    DE/rand/1 adds the difference to a third donor instead, so its offspring are generally not on any
-    such line through the target.
-    """
-    problem = dtlz2(n_objectives=2, n_variables=4)
-    rng = np.random.default_rng(1)
-    symbols = [v.symbol for v in problem.get_flattened_variables()]
-    # Interior points and a small F keep every offspring inside the bounds, so no clipping interferes.
-    population = pl.DataFrame(0.3 + 0.4 * rng.random((6, 4)), schema=symbols, orient="row")
-    whole = population.to_numpy()
-    differences = {(a, b): whole[a] - whole[b] for a in range(6) for b in range(6) if a != b}
-
-    def on_a_target_line(base_vector: str, target: int) -> bool:
-        operator = DifferentialEvolutionCrossover(
-            problem=problem,
-            publisher=Publisher(),
-            seed=target,
-            verbosity=0,
-            scaling_factor=0.25,
-            xover_probability=1.0,
-            base_vector=base_vector,
-        )
-        step = operator.do(population=population, to_mate=[target]).to_numpy()[0] - whole[target]
-        return any(np.allclose(step, 0.25 * diff) for (a, b), diff in differences.items() if target not in (a, b))
-
-    assert all(on_a_target_line("target", target) for target in range(6))
-    assert not all(on_a_target_line("random", target) for target in range(6))
+    assert isinstance(crossover, DifferentialEvolutionCurrentCrossoverOptions)
+    assert crossover.scaling_factor == 0.5
+    assert crossover.xover_probability == 1.0
 
 
 @MOEAD_DISABLED

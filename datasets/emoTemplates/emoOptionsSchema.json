@@ -250,6 +250,9 @@
                                 "$ref": "#/$defs/DifferentialEvolutionCrossoverOptions"
                             },
                             {
+                                "$ref": "#/$defs/DifferentialEvolutionCurrentCrossoverOptions"
+                            },
+                            {
                                 "$ref": "#/$defs/ParentCentricCrossoverOptions"
                             },
                             {
@@ -397,19 +400,38 @@
                     "minimum": 0.0,
                     "title": "Xover Probability",
                     "type": "number"
-                },
-                "base_vector": {
-                    "default": "random",
-                    "description": "The vector the scaled difference is added to.",
-                    "enum": [
-                        "random",
-                        "target"
-                    ],
-                    "title": "Base Vector",
-                    "type": "string"
                 }
             },
             "title": "DifferentialEvolutionCrossoverOptions",
+            "type": "object"
+        },
+        "DifferentialEvolutionCurrentCrossoverOptions": {
+            "description": "Options for Differential Evolution crossover with the target as base vector (DE/current/1).",
+            "properties": {
+                "name": {
+                    "const": "DifferentialEvolutionCurrentCrossover",
+                    "default": "DifferentialEvolutionCurrentCrossover",
+                    "description": "The name of the crossover operator.",
+                    "title": "Name",
+                    "type": "string"
+                },
+                "scaling_factor": {
+                    "default": 0.5,
+                    "description": "The factor F applied to the difference vector.",
+                    "exclusiveMinimum": 0.0,
+                    "title": "Scaling Factor",
+                    "type": "number"
+                },
+                "xover_probability": {
+                    "default": 1.0,
+                    "description": "The crossover rate CR.",
+                    "maximum": 1.0,
+                    "minimum": 0.0,
+                    "title": "Xover Probability",
+                    "type": "number"
+                }
+            },
+            "title": "DifferentialEvolutionCurrentCrossoverOptions",
             "type": "object"
         },
         "ElitistSelectionOptions": {
@@ -1770,6 +1792,9 @@
                             "$ref": "#/$defs/DifferentialEvolutionCrossoverOptions"
                         },
                         {
+                            "$ref": "#/$defs/DifferentialEvolutionCurrentCrossoverOptions"
+                        },
+                        {
                             "$ref": "#/$defs/ParentCentricCrossoverOptions"
                         },
                         {
@@ -1975,6 +2000,9 @@
                         },
                         {
                             "$ref": "#/$defs/DifferentialEvolutionCrossoverOptions"
+                        },
+                        {
+                            "$ref": "#/$defs/DifferentialEvolutionCurrentCrossoverOptions"
                         },
                         {
                             "$ref": "#/$defs/ParentCentricCrossoverOptions"
@@ -2200,6 +2228,9 @@
                             "$ref": "#/$defs/DifferentialEvolutionCrossoverOptions"
                         },
                         {
+                            "$ref": "#/$defs/DifferentialEvolutionCurrentCrossoverOptions"
+                        },
+                        {
                             "$ref": "#/$defs/ParentCentricCrossoverOptions"
                         },
                         {
@@ -2407,6 +2438,9 @@
                             "$ref": "#/$defs/DifferentialEvolutionCrossoverOptions"
                         },
                         {
+                            "$ref": "#/$defs/DifferentialEvolutionCurrentCrossoverOptions"
+                        },
+                        {
                             "$ref": "#/$defs/ParentCentricCrossoverOptions"
                         },
                         {
@@ -2583,6 +2617,9 @@
                         },
                         {
                             "$ref": "#/$defs/DifferentialEvolutionCrossoverOptions"
+                        },
+                        {
+                            "$ref": "#/$defs/DifferentialEvolutionCurrentCrossoverOptions"
                         },
                         {
                             "$ref": "#/$defs/ParentCentricCrossoverOptions"

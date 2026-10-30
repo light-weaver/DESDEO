@@ -1,7 +1,7 @@
 """Define popular MOEAs as Pydantic models."""
 
 from desdeo.emo.options.crossover import (
-    DifferentialEvolutionCrossoverOptions,
+    DifferentialEvolutionCurrentCrossoverOptions,
     SimulatedBinaryCrossoverOptions,
     UniformMixedIntegerCrossoverOptions,
 )
@@ -655,8 +655,9 @@ def moead_de_options() -> EMOOptions:
     offspring.
 
     The paper resets a variable that leaves its bounds to a random value inside them (Step 2.3). This
-    configuration clips it instead, as DESDEO's differential evolution operator, PlatEMO and jMetal
-    all do.
+    configuration clips it instead, as the authors' C++ code, PlatEMO and jMetal all do. The paper also
+    does not say whether a donor may be the target. Here it may, as in that C++ code; see
+    [DifferentialEvolutionCurrentCrossover][desdeo.emo.operators.crossover.DifferentialEvolutionCurrentCrossover].
 
     References:
         H. Li and Q. Zhang, "Multiobjective Optimization Problems With Complicated Pareto Sets, MOEA/D and
@@ -670,11 +671,10 @@ def moead_de_options() -> EMOOptions:
         preference=None,
         template=TemplateMOEADOptions(
             algorithm_name="MOEA/D-DE",
-            crossover=DifferentialEvolutionCrossoverOptions(
-                name="DifferentialEvolutionCrossover",
+            crossover=DifferentialEvolutionCurrentCrossoverOptions(
+                name="DifferentialEvolutionCurrentCrossover",
                 scaling_factor=0.5,
                 xover_probability=1.0,
-                base_vector="target",  # Step 2.2 sets r1 = i
             ),
             mutation=BoundedPolynomialMutationOptions(
                 name="BoundedPolynomialMutation",
