@@ -118,11 +118,10 @@ their mean and the share copied from each parent, Bonferroni-corrected within a 
 This checks the crossover operator only. It does not cover tournament selection or how a framework
 handles an odd mating pool.
 
-**Open: `sbx_platemo` at η = 30.** The arm reproduces PlatEMO's operator but not what PlatEMO ships.
-At 30 it differs from `sbx_default` in `truncated` alone, which makes the pair a clean bound-handling
-contrast. At 20 it would be PlatEMO's real default, and that is what the framework question asks
-about. The config stays at 30 until this is decided. The value has to be settled before the grid
-runs, because `test_legacy_equivalence.py` pins the arm to the EMO paper's.
+**Decided: `sbx_platemo` stays at η = 30.** The arm reproduces PlatEMO's operator but not what PlatEMO
+ships, whose default is 20. At 30 it differs from `sbx_default` in `truncated` alone, so the pair is a
+clean bound-handling contrast, and it stays the EMO paper's arm. Any statement about PlatEMO in the
+paper has to name this difference.
 
 ## Changes from the EMO-paper version
 
@@ -154,7 +153,10 @@ runs, because `test_legacy_equivalence.py` pins the arm to the EMO paper's.
 - The smoke configuration, now with four algorithms and both DE arms, runs phases 0 to 4 (82 jobs, no
   NaN in the four Pareto-compliant indicators). A second invocation does nothing. Phase 5 was not
   rerun: it depends on the problems alone.
-- The full dry run plans 22 504 jobs:
+- This branch had lost the `experiment` dependency group, so `slurm/run.sh` stopped before its first
+  job. The group is back in `pyproject.toml`. Snakemake 9.27 caps its dependencies, which moves the
+  branch's lock from `sqlmodel` 0.0.42 to 0.0.37 and `packaging` 26.3 to 25.0.
+- The full dry run through `slurm/run.sh -n` plans 22 504 jobs:
 
   | Rule | Jobs |
   |---|---|
