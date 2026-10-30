@@ -12,7 +12,7 @@ def test_config_is_valid(config):
 
 
 def test_grid_size(config):
-    """150 instances x 3 algorithms x 13 crossovers x 1 mutation, at 11 seeds each."""
+    """150 instances x 5 algorithms x 14 crossovers x 1 mutation, at 11 seeds each."""
     instances = design.selected_instances(config)
     assert len(instances) == 150
     suites = [i.suite for i in instances.values()]
@@ -24,8 +24,8 @@ def test_grid_size(config):
     }
     families = [i.family for i in instances.values()]
     assert {f: families.count(f) for f in set(families)} == {"benchmark": 108, "real_world": 42}
-    assert len(design.run_blocks(config)) * len(config["run"]["seeds"]) == 64_350
-    assert len(design.front_blocks(config)) * len(config["reference_front"]["seeds"]) == 150 * 78
+    assert len(design.run_blocks(config)) * len(config["run"]["seeds"]) == 115_500
+    assert len(design.front_blocks(config)) * len(config["reference_front"]["seeds"]) == 150 * 140
 
 
 def test_readmitted_instance_is_present(config):
@@ -42,6 +42,34 @@ def test_every_option_combination_builds(config):
             assert template.verbosity == 2
             assert template.generator.n_points == 210
             assert template.seed == 0
+
+
+@pytest.mark.parametrize(
+    ("algorithm", "name", "selector"),
+    [("spea2", "SPEA2", "SPEA2Selector"), ("agemoea2", "AGE-MOEA-II", "AGEMOEA2Selector")],
+)
+def test_added_algorithms_differ_from_the_others_in_selection_only(config, algorithm, name, selector):
+    def build(chosen):
+        return design.make_options(
+            config, chosen, "de_current", "polynomial", m=5, max_evaluations=1000, seed=0, use_archive=False
+        ).template
+
+    added, nsga2 = build(algorithm), build("nsga2")
+    assert (added.algorithm_name, added.selection.name) == (name, selector)
+    assert added.selection.population_size == added.mate_selection.winner_size == 210
+    differing = {key for key in type(added).model_fields if getattr(added, key) != getattr(nsga2, key)}
+    assert differing == {"algorithm_name", "selection"}
+
+
+def test_the_two_de_arms_are_different_operators(config):
+    rand = design.crossover_options(config, "de")
+    current = design.crossover_options(config, "de_current")
+    assert (rand.name, rand.scaling_factor, rand.xover_probability) == ("DifferentialEvolutionCrossover", 0.5, 0.9)
+    assert (current.name, current.scaling_factor, current.xover_probability) == (
+        "DifferentialEvolutionCurrentCrossover",
+        0.5,
+        1.0,
+    )
 
 
 def test_a_bad_operator_value_gives_one_readable_error(config):

@@ -9,8 +9,8 @@ results: results_smoke
 
 run:
   instances: [dtlz2_m3_n12, re33_m3]
-  algorithms: [nsga3, ibea]
-  crossovers: [sbx_default, sbx_no_uniform, de]
+  algorithms: [nsga3, ibea, spea2, agemoea2]
+  crossovers: [sbx_default, sbx_no_uniform, de, de_current]
   seeds: [0, 1]
 
 calibration:

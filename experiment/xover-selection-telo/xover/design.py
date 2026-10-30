@@ -16,7 +16,7 @@ from typing import Any
 
 from xover.problems import Instance, instances
 
-ALGORITHMS = ("nsga3", "nsga2", "ibea")
+ALGORITHMS = ("nsga3", "nsga2", "ibea", "spea2", "agemoea2")
 """The algorithms `make_options` can build."""
 
 
@@ -163,12 +163,13 @@ def make_options(
 
     Every operator parameter is set here rather than inherited from DESDEO's per-algorithm
     factories, so the algorithm factor differs in the selection machinery and nothing else. All
-    algorithms run at verbosity 2, which IBEA's and NSGA-II's tournament selection need, and which
-    the snapshot logger needs for the population frames. One seed drives every random component.
+    algorithms run at verbosity 2, which the mating tournament of every algorithm except NSGA-III
+    needs, and which the snapshot logger needs for the population frames. One seed drives every
+    random component.
 
     Args:
         config: the workflow config.
-        algorithm: `nsga3`, `nsga2` or `ibea`.
+        algorithm: a name in `ALGORITHMS`.
         crossover: a key of `config["crossovers"]`.
         mutation: a key of `config["mutations"]`.
         m: the number of objectives, which sets the population size.
@@ -182,10 +183,12 @@ def make_options(
     from desdeo.emo.options.repair import ClipRepairOptions
     from desdeo.emo.options.scalar_selection import TournamentSelectionOptions
     from desdeo.emo.options.selection import (
+        AGEMOEA2SelectorOptions,
         IBEASelectorOptions,
         NSGA2SelectorOptions,
         NSGA3SelectorOptions,
         ReferenceVectorOptions,
+        SPEA2SelectorOptions,
     )
     from desdeo.emo.options.termination import MaxEvaluationsTerminatorOptions
 
@@ -231,6 +234,22 @@ def make_options(
             selection=IBEASelectorOptions(
                 population_size=n, kappa=settings["kappa"], binary_indicator=settings["binary_indicator"]
             ),
+            mate_selection=TournamentSelectionOptions(tournament_size=settings["tournament_size"], winner_size=n),
+            **common,
+        )
+    elif algorithm == "spea2":
+        # `population_size` is the archive, N-bar in the paper, and the tournament winners are the
+        # population N. The paper's continuous experiments set the two equal.
+        template = Template2Options(
+            algorithm_name="SPEA2",
+            selection=SPEA2SelectorOptions(population_size=n),
+            mate_selection=TournamentSelectionOptions(tournament_size=settings["tournament_size"], winner_size=n),
+            **common,
+        )
+    elif algorithm == "agemoea2":
+        template = Template2Options(
+            algorithm_name="AGE-MOEA-II",
+            selection=AGEMOEA2SelectorOptions(population_size=n),
             mate_selection=TournamentSelectionOptions(tournament_size=settings["tournament_size"], winner_size=n),
             **common,
         )

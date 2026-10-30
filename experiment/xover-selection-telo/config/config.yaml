@@ -10,9 +10,9 @@ results: results
 # --------------------------------------------------------------------------------------------------
 run:
   instances: all
-  algorithms: [nsga3, nsga2, ibea]
+  algorithms: [nsga3, nsga2, ibea, spea2, agemoea2]
   crossovers: [sbx_default, sbx_platemo, sbx_jmetal, sbx_no_uniform, blend, bex, bex_uniform,
-               uniform, sax, de, pcx, composite, none]
+               uniform, sax, de, de_current, pcx, composite, none]
   mutations: [polynomial]
   seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 
@@ -96,9 +96,12 @@ algorithms:
   nsga3: {reference_vectors: s_energy, vector_type: planar}
   nsga2: {tournament_size: 2}
   ibea: {kappa: 0.05, binary_indicator: eps, tournament_size: 2}
+  spea2: {tournament_size: 2}
+  agemoea2: {tournament_size: 2}
 
 crossovers:
-  # Four SBX arms, each a framework's shipped operator, plus a control with the uniform swap off.
+  # Three SBX arms, each with a framework's operator, plus a control with the uniform swap off.
+  # PLAN.md records where their parameters differ from what the framework ships.
   sbx_default: {name: SimulatedBinaryCrossover, pair_xover_probability: 1.0, xover_probability: 0.5,
                 xover_distribution: 30.0, truncated: true, uniform_xover_probability: 0.5,
                 swap_uncrossed_variables: false}
@@ -117,7 +120,10 @@ crossovers:
                 uniform_xover_probability: 0.5}
   uniform: {name: UniformCrossover, pair_xover_probability: 1.0, uniform_xover_probability: 0.5}
   sax: {name: SingleArithmeticCrossover, xover_probability: 1.0}
+  # DE/rand/1/bin, the arm of the EMO paper, and DE/current/1, MOEA/D-DE's operator at Li and Zhang's
+  # F = 0.5 and CR = 1, where every component comes from the mutant.
   de: {name: DifferentialEvolutionCrossover, scaling_factor: 0.5, xover_probability: 0.9}
+  de_current: {name: DifferentialEvolutionCurrentCrossover, scaling_factor: 0.5, xover_probability: 1.0}
   pcx: {name: ParentCentricCrossover, sigma_zeta: 0.1, sigma_eta: 0.1}
   composite:
     name: CompositeCrossover
