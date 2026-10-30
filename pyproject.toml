@@ -106,6 +106,10 @@ stochastic = [
   "mpi-sppy@ git+https://github.com/juropo/mpi-sppy@main",
 ]
 
+experiment = [ # orchestration for the studies under experiment/, not needed to use DESDEO
+    "snakemake>=8.0",
+]
+
 all-dev = [
   { include-group = "dev" },
   { include-group = "docs" },
