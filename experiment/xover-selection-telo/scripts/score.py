@@ -10,7 +10,7 @@ import polars as pl
 
 from xover import design, fronts
 from xover.indicators import score_run
-from xover.logger import load_run, mechanism_summary, unpack_snapshots
+from xover.logger import load_block, mechanism_summary, unpack_snapshots
 
 config = snakemake.config
 slug, algorithm = snakemake.wildcards.inst, snakemake.wildcards.alg
@@ -29,21 +29,21 @@ keys = {
 }
 rows, mechanism = [], []
 for path in sorted(map(Path, snakemake.input.runs)):
-    # .../{inst}/{alg}/{xo}/{mut}/s{seed}.npz
-    run = keys | {"crossover": path.parent.parent.name, "mutation": path.parent.name, "seed": int(path.stem[1:])}
-    arrays = load_run(path)
-    mechanism.append(run | mechanism_summary(arrays))
-    for row in score_run(
-        unpack_snapshots(arrays),
-        arrays["snap_evals"],
-        front,
-        fractions=config["fractions"],
-        m=instance.m,
-        population=population,
-        exact_hv_max_m=config["indicators"]["exact_hv_max_m"],
-        r2_weights=config["indicators"]["r2_weights"],
-    ):
-        rows.append(run | row)
+    # .../{inst}/{alg}/{xo}/{mut}.tar
+    for seed, arrays in load_block(path).items():
+        run = keys | {"crossover": path.parent.name, "mutation": path.stem, "seed": seed}
+        mechanism.append(run | mechanism_summary(arrays))
+        for row in score_run(
+            unpack_snapshots(arrays),
+            arrays["snap_evals"],
+            front,
+            fractions=config["fractions"],
+            m=instance.m,
+            population=population,
+            exact_hv_max_m=config["indicators"]["exact_hv_max_m"],
+            r2_weights=config["indicators"]["r2_weights"],
+        ):
+            rows.append(run | row)
 
 Path(snakemake.output.indicators).parent.mkdir(parents=True, exist_ok=True)
 Path(snakemake.output.mechanism).parent.mkdir(parents=True, exist_ok=True)

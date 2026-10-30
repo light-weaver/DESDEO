@@ -20,6 +20,8 @@ Design constraints:
 
 from __future__ import annotations
 
+import io
+import tarfile
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -533,7 +535,17 @@ def _diversity_decay(arrays: dict[str, np.ndarray]) -> dict[str, float]:
     }
 
 
-def load_run(npz_path: str | Path) -> dict[str, np.ndarray]:
+def load_run(npz_path: str | Path | io.BytesIO) -> dict[str, np.ndarray]:
     """Read one run's `.npz`."""
     with np.load(npz_path, allow_pickle=False) as handle:
         return {key: handle[key] for key in handle.files}
+
+
+def load_block(tar_path: str | Path) -> dict[int, dict[str, np.ndarray]]:
+    """Read every run in one block's `.tar`, keyed by seed, in the order the seeds ran."""
+    with tarfile.open(tar_path) as tar:
+        return {
+            int(Path(member.name).stem[1:]): load_run(io.BytesIO(tar.extractfile(member).read()))
+            for member in tar.getmembers()
+            if member.name.endswith(".npz")
+        }

@@ -79,8 +79,7 @@ Under `results/` (`results_smoke/` for the smoke configuration):
 | `budgets/{instance}.json`, `budgets.csv` | the budget, the median IGD+ saturation curve, timings |
 | `front_runs/{instance}/{algorithm}/{crossover}/{mutation}.npz` | the archives of the front runs (`archive_F_s{seed}`) |
 | `fronts/{instance}.npz` + `.json` | the frozen front (`points`, `ideal`, `nadir`, float32) and its pool size and HV(R) |
-| `runs/{instance}/{algorithm}/{crossover}/{mutation}/s{seed}.npz` | one run's dump, described below |
-| `runs/.../s{seed}.json` | its timings, generations, message counts and provenance (git SHA, package versions) |
+| `runs/{instance}/{algorithm}/{crossover}/{mutation}.tar` | one block's runs: for each seed, `s{seed}.npz`, the dump described below, and `s{seed}.json`, its timings, generations, message counts and provenance (git SHA, package versions) |
 | `indicators/{instance}/{algorithm}.parquet` | one row per run and budget fraction |
 | `mechanism/{instance}/{algorithm}.parquet` | one row per run: mean and final value of each mechanism statistic |
 | `landscape/sample/{instance}.npz` | the landscape sample and its derived scalar landscapes |
@@ -96,7 +95,10 @@ A run dump (`.npz`, plain float32/int32 arrays) holds:
 - `mech_*`: crossover diagnostics every 5th generation (parent separation, offspring step, fraction
   of genes on a bound, parent-set diameter), normalised by the decision box diagonal.
 
-`xover.logger.load_run` and `xover.logger.unpack_snapshots` read them back.
+`xover.logger.load_block` and `xover.logger.unpack_snapshots` read them back. The tar is uncompressed,
+since the `.npz` members already are, and exists to keep the file count down: the full study has
+10 500 tars in place of 231 000 files, and Snakemake's metadata shrinks with them. `tar -xf` unpacks
+one by hand.
 
 ## Reproducibility
 

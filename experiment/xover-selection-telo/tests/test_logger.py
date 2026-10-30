@@ -1,10 +1,13 @@
 """The snapshot schedule and the dump of one short run."""
 
+import json
+import tarfile
+
 import numpy as np
 
 from xover.design import Block
-from xover.logger import checkpoints, mechanism_summary, unpack_snapshots
-from xover.run import run_cell
+from xover.logger import checkpoints, load_block, mechanism_summary, unpack_snapshots
+from xover.run import run_cell, write_block
 
 
 def test_checkpoints_follow_the_fractions():
@@ -24,6 +27,24 @@ def test_one_run_dumps_every_fraction(config):
     assert arrays["snap_X0"].shape == (91, 12)
     assert record["provenance"]["versions"]["desdeo"] != "unknown"
     assert set(mechanism_summary(arrays)) >= {"parent_separation", "offspring_step", "diversity_retained"}
+
+
+def test_a_block_round_trips_through_its_tar(tmp_path):
+    first = {"snap_F": np.arange(6, dtype=np.float32).reshape(2, 3), "snap_n": np.array([2], dtype=np.int32)}
+    second = {"snap_F": first["snap_F"] + 1, "snap_n": first["snap_n"]}
+    path = tmp_path / "ibea" / "de" / "polynomial.tar"
+
+    write_block(path, {0: (first, {"generations": 3}), 10: (second, {"generations": 4})})
+
+    runs = load_block(path)
+    assert list(runs) == [0, 10]
+    assert runs[10]["snap_F"].dtype == np.float32
+    np.testing.assert_array_equal(runs[0]["snap_F"], first["snap_F"])
+    np.testing.assert_array_equal(runs[10]["snap_F"], second["snap_F"])
+    with tarfile.open(path) as tar:
+        assert tar.getnames() == ["s0.npz", "s0.json", "s10.npz", "s10.json"]
+        assert json.load(tar.extractfile("s10.json")) == {"generations": 4}
+    assert [item.name for item in path.parent.iterdir()] == ["polynomial.tar"]
 
 
 def test_same_seed_same_run_different_seed_different_run(config):

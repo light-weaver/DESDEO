@@ -51,7 +51,7 @@ PROBLEM_DATA = f"{R}/problem_data.json"
 BUDGET = f"{R}/budgets/{{inst}}.json"
 FRONT_RUN = f"{R}/front_runs/{{inst}}/{{alg}}/{{xo}}/{{mut}}"
 FRONT = f"{R}/fronts/{{inst}}"
-RUN = f"{R}/runs/{{inst}}/{{alg}}/{{xo}}/{{mut}}/s{{seed}}"
+RUN = f"{R}/runs/{{inst}}/{{alg}}/{{xo}}/{{mut}}"
 INDICATORS = f"{R}/indicators/{{inst}}/{{alg}}.parquet"
 MECHANISM = f"{R}/mechanism/{{inst}}/{{alg}}.parquet"
 SAMPLE = f"{R}/landscape/sample/{{inst}}.npz"
@@ -79,11 +79,6 @@ def blocks_of(blocks, pattern, **filters):
         for b in blocks
         if all(getattr(b, key) == value for key, value in filters.items())
     ]
-
-
-def with_seeds(paths):
-    """Each path once per seed of the main grid."""
-    return [fill(path, seed=seed) for path in paths for seed in config["run"]["seeds"]]
 
 
 INSTANCE_ALGORITHMS = sorted({(b.instance, b.algorithm) for b in BLOCKS})
@@ -115,7 +110,7 @@ rule fronts:
 
 rule runs:
     input:
-        with_seeds(blocks_of(BLOCKS, RUN + ".npz")),
+        blocks_of(BLOCKS, RUN + ".tar"),
 
 
 rule indicators:
@@ -220,9 +215,9 @@ rule run_block:
         ancient(PROBLEM_DATA),
         budget=BUDGET,
     output:
-        npz=expand(RUN + ".npz", seed=config["run"]["seeds"], allow_missing=True),
-        json=expand(RUN + ".json", seed=config["run"]["seeds"], allow_missing=True),
+        RUN + ".tar",
     params:
+        seeds=config["run"]["seeds"],
         algorithm=lambda w: config["algorithms"][w.alg],
         crossover=lambda w: config["crossovers"][w.xo],
         mutation=lambda w: config["mutations"][w.mut],
@@ -241,7 +236,7 @@ rule run_block:
 rule score:
     input:
         front=FRONT + ".npz",
-        runs=lambda w: with_seeds(blocks_of(BLOCKS, RUN + ".npz", instance=w.inst, algorithm=w.alg)),
+        runs=lambda w: blocks_of(BLOCKS, RUN + ".tar", instance=w.inst, algorithm=w.alg),
     output:
         indicators=INDICATORS,
         mechanism=MECHANISM,

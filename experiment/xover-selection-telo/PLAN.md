@@ -132,7 +132,7 @@ paper has to name this difference.
 | Mutation factorial dropped (Study A: 3 extra mutations on 13 core instances) | Polynomial mutation only. **This removes the evidence for the draft's "mutation matters little" result** (ω² ≈ 0.0004 for mutation) |
 | ZCAT and rotated-DTLZ side runs folded into the main design | One config, one result tree, no `XOVER_RUN` switch or per-run config hashes |
 | Landscape features on one 200 d sample per instance | Replaces 11 seeded initial populations. The ICC (seed-stability) screen has nothing to measure and is gone |
-| Raw run dumps kept | The cluster pipeline deleted each run after scoring it |
+| Raw run dumps kept, one tar per block | The cluster pipeline deleted each run after scoring it. Two files per run would take the study past Roihu's default 500 000 scratch files |
 | SPEA2 and AGE-MOEA-II added (3 → 5 algorithms) | Two selection schemes the first three do not cover: strength fitness with nearest-neighbour density, and a survival score from the estimated front geometry |
 | `de_current` added (13 → 14 crossovers) | DESDEO split DE/current/1 out of `DifferentialEvolutionCrossover` (`6b023c55`), which gives a DE variant with no per-variable mixing |
 
@@ -156,6 +156,11 @@ paper has to name this difference.
 - This branch had lost the `experiment` dependency group, so `slurm/run.sh` stopped before its first
   job. The group is back in `pyproject.toml`. Snakemake 9.27 caps its dependencies, which moves the
   branch's lock from `sqlmodel` 0.0.42 to 0.0.37 and `packaging` 26.3 to 25.0.
+- Runs moved from two files per seed into one tar per block. On the smoke configuration all 16
+  indicator and mechanism tables are identical to those from the separate files, exactly and row for
+  row. That configuration has seeds 0 and 1 only. The full grid now scores seeds in numeric order
+  instead of `s0, s1, s10, s2`, so its rows sort differently while their values do not change. A
+  changed seed list still reruns the blocks, because the list is a param of `run_block`.
 - The full dry run through `slurm/run.sh -n` plans 22 504 jobs:
 
   | Rule | Jobs |
@@ -185,6 +190,10 @@ The grid has 115 500 runs and the fronts 21 000, against 64 350 and 11 700 befor
 rates on 128 cores (61 776 grid runs in 140 min, 8 034 front runs in 1.21 h) that is about 7.5 hours,
 before calibration and landscape features. Treat that as a floor, since those rates are from a
 smaller instance set and AGE-MOEA-II costs more than the old algorithms.
+
+The study writes about 34 000 result files, and Snakemake keeps one metadata file for each. With the
+uv environments that comes to about 133 000 files on scratch, against a default quota of 500 000.
+Two files per run would have been about 570 000.
 
 Time per evaluation with `sbx_default` relative to NSGA-III on the same instance, on one core, from
 single runs while other jobs shared the machine:

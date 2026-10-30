@@ -6,10 +6,12 @@ reference fronts (phase 2) and the main grid (phase 3).
 
 from __future__ import annotations
 
+import io
 import json
 import platform
 import socket
 import subprocess
+import tarfile
 import time
 from functools import cache
 from importlib import metadata
@@ -111,6 +113,31 @@ def write_json(path: str | Path, record: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     partial = path.with_name(f".{path.name}.partial")
     partial.write_text(json.dumps(record, indent=2, default=str) + "\n")
+    partial.replace(path)
+
+
+def write_block(path: str | Path, runs: dict[int, tuple[dict[str, np.ndarray], dict[str, Any]]]) -> None:
+    """Write a block's runs, `{seed: (arrays, record)}`, into one tar, atomically.
+
+    Each seed becomes `s{seed}.npz` and `s{seed}.json`. The tar itself is uncompressed, since the
+    `.npz` members already are. One file per block instead of two per run keeps the study inside
+    Roihu's scratch file quota.
+    """
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    partial = path.with_name(f".{path.name}.partial")
+
+    def add(tar: tarfile.TarFile, name: str, content: bytes) -> None:
+        member = tarfile.TarInfo(name)
+        member.size = len(content)
+        tar.addfile(member, io.BytesIO(content))
+
+    with tarfile.open(partial, "w") as tar:
+        for seed, (arrays, record) in runs.items():
+            npz = io.BytesIO()
+            np.savez_compressed(npz, **arrays)
+            add(tar, f"s{seed}.npz", npz.getvalue())
+            add(tar, f"s{seed}.json", (json.dumps(record, indent=2, default=str) + "\n").encode())
     partial.replace(path)
 
 
