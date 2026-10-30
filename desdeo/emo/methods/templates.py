@@ -8,7 +8,7 @@ from collections.abc import Callable
 import numpy as np
 import polars as pl
 
-from desdeo.emo.operators.crossover import BaseCrossover, DifferentialEvolutionCrossover
+from desdeo.emo.operators.crossover import BaseCrossover, BaseDifferentialEvolutionCrossover
 from desdeo.emo.operators.evaluator import EMOEvaluator
 from desdeo.emo.operators.generator import BaseGenerator
 from desdeo.emo.operators.learning_mode import LearningModeOperator
@@ -263,12 +263,11 @@ def template_moead(
     straight away, so the next subproblem already mates with the updated population. A generation
     therefore spends exactly as many evaluations as there are subproblems, one at a time.
 
-    How the parents are drawn depends on the crossover. For
-    [DifferentialEvolutionCrossover][desdeo.emo.operators.crossover.DifferentialEvolutionCrossover]
-    the current solution `x_i` is the target and the donors come from the pool (MOEA/D-DE, Step 2.2);
-    set its `base_vector` to "target" to get MOEA/D-DE's `x_i + F * (x_r2 - x_r3)`. Any other
-    crossover gets two distinct parents drawn from the pool (MOEA/D, Step 2.1), and one of the
-    children it returns is kept at random.
+    How the parents are drawn depends on the crossover. For a differential evolution crossover the
+    current solution `x_i` is the target and the donors come from the pool (MOEA/D-DE, Step 2.2);
+    [DifferentialEvolutionCurrentCrossover][desdeo.emo.operators.crossover.DifferentialEvolutionCurrentCrossover]
+    gives MOEA/D-DE's `x_i + F * (x_r2 - x_r3)`. Any other crossover gets two distinct parents drawn
+    from the pool (MOEA/D, Step 2.1), and one of the offspring it returns is kept at random.
 
     The final population, one solution per subproblem, is returned. Neither paper's continuous
     experiments keep the external population of nondominated solutions (Zhang and Li 2007,
@@ -301,7 +300,7 @@ def template_moead(
         EMOResult: The final population and their objective vectors, constraint vectors, and targets
     """
     rng = np.random.default_rng(seed)
-    target_aligned = isinstance(crossover, DifferentialEvolutionCrossover)
+    target_aligned = isinstance(crossover, BaseDifferentialEvolutionCrossover)
 
     solutions, outputs = generator.do()  # 2007 Step 1.3, 2009 Step 1.2
     # The neighbourhoods (2007 Step 1.2, 2009 Step 1.1) were built with the selector; this sets z.
