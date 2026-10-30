@@ -29,8 +29,11 @@
 set -euo pipefail
 cd "${SLURM_SUBMIT_DIR:?submit with sbatch from the study directory}"
 
+# Greedy, because every job takes one core and nothing is temp(), so an ILP has nothing to optimise,
+# and Snakemake's default gives it up to 10 s per pass over thousands of ready jobs.
 uv run --group experiment snakemake \
     --cores "${SLURM_CPUS_PER_TASK}" \
+    --scheduler greedy \
     --rerun-incomplete \
     --keep-going \
     --printshellcmds \
