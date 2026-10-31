@@ -86,6 +86,15 @@ class Panel:
     critical_difference: float
 
 
+def display_tiers(tiers: dict[str, str]) -> dict[str, str]:
+    """Return the tiers as the figures mark them, with both DE arms under `de`.
+
+    `analysis.tier` keeps `de_current` in `non_mixing`, because PLAN.md's falsification test counts it
+    there. A reader of a figure needs to see the two DE arms as one operator family.
+    """
+    return {**tiers, "de_current": "de"}
+
+
 def cliques(ranks: list[float], cd: float) -> list[tuple[int, int]]:
     """Return maximal runs of consecutive arms (sorted by rank) whose ranks span less than `cd`."""
     out: list[tuple[int, int]] = []
@@ -200,7 +209,7 @@ def rank_grid(tier: dict, crossovers: dict[str, Any]) -> plt.Figure:
     """
     columns = ["all", *(f"algorithm={a}" for a in ALGORITHM_LABEL)]
     labels = ["Pooled", *ALGORITHM_LABEL.values()]
-    tiers = tier["tiers"]
+    tiers = display_tiers(tier["tiers"])
     indicators = tier["indicators"]
     arms = sorted(tiers, key=lambda a: np.mean([tier["cuts"][i]["all"]["mean_ranks"][a] for i in indicators]))
 
@@ -347,7 +356,7 @@ def main() -> None:
     root = results_dir(config)
     plots = root / "plots"
     tier = json.loads((root / "analysis" / "tier.json").read_text())
-    tiers = tier["tiers"]
+    tiers = display_tiers(tier["tiers"])
     arms = len(tiers)
     n_algorithms = len(ALGORITHM_LABEL)
 

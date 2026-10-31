@@ -1,6 +1,17 @@
 """The logic behind what the figures claim: which arms a CD bar joins, and when a ranking settles."""
 
-from analysis.figures import clique_rows, cliques, settled_at
+from analysis.figures import clique_rows, cliques, display_tiers, settled_at
+from analysis.tier import tier
+
+
+def test_both_de_arms_are_marked_alike_and_the_analysis_tiers_are_left_alone(config):
+    tiers = {arm: tier(options) for arm, options in config["crossovers"].items()}
+    shown = display_tiers(tiers)
+    assert shown["de"] == shown["de_current"] == "de"
+    assert tiers["de_current"] == "non_mixing"
+    assert {arm: t for arm, t in shown.items() if arm != "de_current"} == {
+        arm: t for arm, t in tiers.items() if arm != "de_current"
+    }
 
 
 def test_cliques_join_arms_closer_than_the_critical_difference():
