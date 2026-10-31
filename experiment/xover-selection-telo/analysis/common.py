@@ -48,12 +48,12 @@ def load_mechanism(config: dict[str, Any]) -> pl.DataFrame:
 
 
 def provenance() -> dict[str, Any]:
-    """Return the commit the analysis ran from, and whether the tree held changes to the study."""
+    """Return the commit the analysis ran from, and whether tracked files in the study had changes."""
 
     def git(*args: str) -> str:
         return subprocess.run(["git", *args], cwd=STUDY, capture_output=True, text=True, check=True).stdout.strip()  # noqa: S603, S607
 
-    return {"git_sha": git("rev-parse", "HEAD"), "dirty": bool(git("status", "--porcelain", "--", "."))}
+    return {"git_sha": git("rev-parse", "HEAD"), "dirty": bool(git("status", "--porcelain", "-uno", "--", "."))}
 
 
 def write(config: dict[str, Any], name: str, payload: dict[str, Any]) -> Path:

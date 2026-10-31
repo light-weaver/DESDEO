@@ -17,6 +17,12 @@ the mixing split carrying a minority of the between-crossover sum of squares. Bo
 and on each of the five algorithms, so that no algorithm can hide a failure in another. `de_current`
 counts as non-mixing (see *The two DE arms*).
 
+**Result (2026-10-31, `analysis/tier.py`):** the claim as written is falsified. It passes pooled on all
+four indicators, and fails in 9 of the 20 algorithm × indicator tests: `sax` reaches the top six under
+NSGA-II and SPEA2 on all four indicators, and on IBEA the mixing split carries 0.403 of the sum of
+squares under the additive epsilon. NSGA-III and AGE-MOEA-II pass all four. `sax` averages one variable
+and swaps none, so it is non-mixing.
+
 ## Factors
 
 | Factor | Levels |
