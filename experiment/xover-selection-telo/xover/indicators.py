@@ -18,6 +18,7 @@ from functools import lru_cache
 
 import moocore
 import numpy as np
+import polars as pl
 
 from xover.fronts import ReferenceFront
 
@@ -346,3 +347,62 @@ objective.
 IGD and GD+ are not in the set. The same EMO 2015 paper gives a counterexample for each -- "the GD+
 indicator is not Pareto compliant" -- and an earlier plan counted both among "the compliant six". GD,
 GD_p, AHD and coverage error are not compliant either."""
+
+RATIO_FLOOR: dict[str, float] = {"hv_relative": 1e-4}
+"""Floors applied before a ratio is taken. The relative hypervolume gap, 1 - HV/HV(reference front),
+can be zero or slightly negative when a run matches or beats the reference front, a subset of the
+pooled archive. Gaps below 0.01 % of the reference hypervolume are within that front's own accuracy,
+so they count as 0.01 %."""
+
+RATIO_INDICATORS: tuple[str, ...] = ("igd_plus", "epsilon_additive", "hv_relative")
+"""The compliant indicators a ratio is meaningful on: lower is better and zero is perfect. R2 is
+neither, so it has ranks and no ratios."""
+
+
+def add_regret(table: pl.DataFrame, indicator: str = "igd_plus") -> pl.DataFrame:
+    """Add normalised regret per instance in [0, 1]: 0 for the best configuration, 1 for the worst.
+
+    Computed within (instance, fraction), so filter the table before calling this: the bounds come from
+    whatever rows it is given. Taken on the median over seeds, so a single unlucky initial population
+    does not define an arm's regret.
+
+    Oriented through `LOWER_IS_BETTER`, so regret means "worse" whatever the indicator's direction, and
+    an indicator with no orientation is refused. `value` stays the raw median in the indicator's own
+    direction. `lo` and `hi` are the bounds of the oriented score, so for a higher-is-better indicator
+    they are the negated maximum and minimum.
+    """
+    if indicator not in LOWER_IS_BETTER:
+        msg = f"{indicator!r} has no orientation in LOWER_IS_BETTER, so it has no regret."
+        raise ValueError(msg)
+    keys = ["instance", "fraction", "algorithm", "crossover", "mutation"]
+    median = table.group_by(keys).agg(pl.col(indicator).median().alias("value"))
+    score = pl.col("value") if LOWER_IS_BETTER[indicator] else -pl.col("value")
+    median = median.with_columns(score.alias("_score"))
+    bounds = median.group_by(["instance", "fraction"]).agg(
+        pl.col("_score").min().alias("lo"), pl.col("_score").max().alias("hi")
+    )
+    joined = median.join(bounds, on=["instance", "fraction"])
+    return joined.with_columns(
+        pl.when(pl.col("hi") > pl.col("lo"))
+        .then((pl.col("_score") - pl.col("lo")) / (pl.col("hi") - pl.col("lo")))
+        .otherwise(0.0)
+        .alias("regret")
+    ).drop("_score")
+
+
+def log_ratios(
+    table: pl.DataFrame, indicator: str, blocks: tuple[str, ...] = ("instance", "algorithm")
+) -> pl.DataFrame:
+    """Return log10(I / I_best) per (instance, algorithm, crossover), I_best being the block's best arm.
+
+    I is the median over seeds. 0 is the block's best arm, 0.3 twice as bad, 1 ten times as bad. Raw
+    values cannot be compared across problems and ratios to the block's own best can, which is what a
+    performance profile (Dolan and More 2002) plots. The default blocks hold the algorithm fixed.
+    """
+    if indicator not in RATIO_INDICATORS:
+        msg = f"{indicator!r} has no meaningful ratio; use one of {RATIO_INDICATORS}"
+        raise ValueError(msg)
+    keys = ["instance", "algorithm", "crossover"]
+    medians = table.group_by(keys).agg(pl.col(indicator).median().alias("value"))
+    medians = medians.with_columns(pl.col("value").clip(lower_bound=RATIO_FLOOR.get(indicator, 0.0)))
+    return medians.with_columns((pl.col("value") / pl.col("value").min().over(list(blocks))).log10().alias("log_ratio"))
