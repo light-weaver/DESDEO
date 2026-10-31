@@ -1,7 +1,53 @@
 """The logic behind what the figures claim: which arms a CD bar joins, and when a ranking settles."""
 
-from analysis.figures import clique_rows, cliques, display_tiers, settled_at
+import numpy as np
+import polars as pl
+import pytest
+
+from analysis.figures import (
+    ALGORITHM_LABEL,
+    algorithm_ranks,
+    clique_rows,
+    cliques,
+    display_tiers,
+    mean_regret,
+    settled_at,
+)
 from analysis.tier import tier
+
+
+def _endpoint() -> pl.DataFrame:
+    """Return two instances x two arms x five algorithms, the first algorithm in the list always best."""
+    return pl.DataFrame(
+        [
+            {
+                "instance": f"i{instance}",
+                "fraction": 1.0,
+                "algorithm": algorithm,
+                "crossover": arm,
+                "mutation": "polynomial",
+                "seed": 0,
+                "igd_plus": 1.0 + place + offset + instance,
+                "r2": -(1.0 + place + offset + instance),
+            }
+            for instance in range(2)
+            for place, algorithm in enumerate(ALGORITHM_LABEL)
+            for arm, offset in (("a", 0.0), ("b", 2.0))
+        ]
+    )
+
+
+@pytest.mark.parametrize("indicator", ["igd_plus", "r2"])
+def test_algorithm_ranks_put_the_best_algorithm_first_whichever_way_the_indicator_points(indicator):
+    assert algorithm_ranks(_endpoint(), [indicator]) == pytest.approx(np.array([[1.0, 2.0, 3.0, 4.0, 5.0]]))
+
+
+def test_mean_regret_is_zero_for_the_best_combination_and_one_for_the_worst():
+    table = mean_regret(_endpoint(), "igd_plus", ["a", "b"])
+    # igd_plus runs from 1 to 7 on each instance, so the regret steps by 1/6.
+    assert table[0, 0] == 0.0
+    assert table[1, -1] == 1.0
+    assert table[0, 1] == pytest.approx(1 / 6)
 
 
 def test_both_de_arms_are_marked_alike_and_the_analysis_tiers_are_left_alone(config):

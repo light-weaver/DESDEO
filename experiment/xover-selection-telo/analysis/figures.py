@@ -5,6 +5,8 @@
 - `rank_grid`: every arm's mean rank pooled and under each algorithm, with the top six outlined.
 - `profiles`: performance profiles under each algorithm, IGD+.
 - `anytime`: Kendall tau between each fraction's ranking and the final one.
+- `algorithm_indicator`: each algorithm's mean rank on each indicator.
+- `regret_grid`: mean regret of every algorithm and crossover combination, one panel per indicator.
 
 Run `python -m analysis.tier` first. Figures go to `results/plots/`, as PDF and PNG.
 
@@ -27,7 +29,7 @@ from matplotlib.patches import Rectangle
 
 from analysis.common import load_config, load_indicators, results_dir
 from xover import plotstyle, stats
-from xover.indicators import log_ratios
+from xover.indicators import add_regret, log_ratios
 
 INK = "#0b0b0b"
 INK_SECONDARY = "#52514e"
@@ -57,6 +59,9 @@ TAU_THRESHOLD = 0.95
 
 WHITE_TEXT_BELOW = 6
 """Mean ranks below this sit on dark enough cells of the rank grid to need white text."""
+
+WHITE_TEXT_SHARE = 0.38
+"""The same limit as a share of a heatmap's colour range."""
 
 CD_ABOVE = 0.40
 """Inches above a CD diagram's axis: tick labels, the panel title and the CD bracket."""
@@ -93,6 +98,12 @@ def display_tiers(tiers: dict[str, str]) -> dict[str, str]:
     there. A reader of a figure needs to see the two DE arms as one operator family.
     """
     return {**tiers, "de_current": "de"}
+
+
+def arm_order(tier: dict) -> list[str]:
+    """Return the arms ordered by their pooled mean rank, averaged over the indicators."""
+    indicators = tier["indicators"]
+    return sorted(tier["tiers"], key=lambda a: np.mean([tier["cuts"][i]["all"]["mean_ranks"][a] for i in indicators]))
 
 
 def cliques(ranks: list[float], cd: float) -> list[tuple[int, int]]:
@@ -211,7 +222,7 @@ def rank_grid(tier: dict, crossovers: dict[str, Any]) -> plt.Figure:
     labels = ["Pooled", *ALGORITHM_LABEL.values()]
     tiers = display_tiers(tier["tiers"])
     indicators = tier["indicators"]
-    arms = sorted(tiers, key=lambda a: np.mean([tier["cuts"][i]["all"]["mean_ranks"][a] for i in indicators]))
+    arms = arm_order(tier)
 
     fig, axes = plt.subplots(2, 2, figsize=(plotstyle.FIGURE_WIDTH, 6.6), sharey=True)
     fig.subplots_adjust(wspace=0.06, hspace=0.26, left=0.2, right=0.995, top=0.97, bottom=0.1)
@@ -341,6 +352,95 @@ def anytime(tier: dict) -> plt.Figure:
     return fig
 
 
+def algorithm_ranks(endpoint: pl.DataFrame, indicators: list[str]) -> np.ndarray:
+    """Return mean ranks of the algorithms, one row per indicator and one column per algorithm.
+
+    Each block is one instance under one crossover, so the crossover is held fixed. Regret carries the
+    orientation, so rank 1 is the best algorithm on every indicator.
+    """
+    rows = []
+    for indicator in indicators:
+        regret = add_regret(endpoint, indicator)
+        ranks = stats.within_block_ranks(regret, "regret", "algorithm", blocks=("instance", "crossover"))
+        rows.append([ranks[algorithm] for algorithm in ALGORITHM_LABEL])
+    return np.array(rows)
+
+
+def mean_regret(endpoint: pl.DataFrame, indicator: str, arms: list[str]) -> np.ndarray:
+    """Return mean regret over instances, one row per arm and one column per algorithm.
+
+    `add_regret` is given all the combinations, so on each instance 0 is the best algorithm and
+    crossover combination and 1 the worst. The scale therefore depends on the worst combination.
+    """
+    means = add_regret(endpoint, indicator).group_by(["algorithm", "crossover"]).agg(pl.col("regret").mean())
+    lookup = {(row["algorithm"], row["crossover"]): row["regret"] for row in means.to_dicts()}
+    return np.array([[lookup[algorithm, arm] for algorithm in ALGORITHM_LABEL] for arm in arms])
+
+
+def annotate_cells(ax, values: np.ndarray, *, vmin: float, vmax: float, fontsize: float) -> None:
+    """Draw `values` as a dark-is-good heatmap with each cell's value written in it."""
+    ax.imshow(values, cmap="Greens_r", vmin=vmin, vmax=vmax, aspect="auto")
+    ax.grid(visible=False)
+    ax.spines[:].set_visible(False)
+    ax.tick_params(length=0)
+    for (row, col), value in np.ndenumerate(values):
+        colour = "white" if (value - vmin) / (vmax - vmin) < WHITE_TEXT_SHARE else INK
+        ax.text(col, row, f"{value:.2f}", ha="center", va="center", fontsize=fontsize, color=colour)
+
+
+def algorithm_indicator(endpoint: pl.DataFrame, indicators: list[str]) -> plt.Figure:
+    """Show each algorithm's mean rank on each indicator, ranked within instance and crossover."""
+    fig, ax = plt.subplots(figsize=(plotstyle.FIGURE_WIDTH * 0.72, 2.0))
+    annotate_cells(ax, algorithm_ranks(endpoint, indicators), vmin=1, vmax=len(ALGORITHM_LABEL), fontsize=8)
+    ax.xaxis.tick_top()
+    ax.set_xticks(range(len(ALGORITHM_LABEL)), ALGORITHM_LABEL.values(), fontsize=7.5)
+    ax.set_yticks(range(len(indicators)), [INDICATOR_LABEL[i] for i in indicators], fontsize=8)
+    return fig
+
+
+def regret_grid(endpoint: pl.DataFrame, tier: dict, crossovers: dict[str, Any]) -> plt.Figure:
+    """Show the mean regret of each algorithm and crossover combination, one panel per indicator."""
+    tiers = display_tiers(tier["tiers"])
+    indicators = tier["indicators"]
+    arms = arm_order(tier)
+    tables = {indicator: mean_regret(endpoint, indicator, arms) for indicator in indicators}
+    vmax = max(float(table.max()) for table in tables.values())
+
+    fig, axes = plt.subplots(2, 2, figsize=(plotstyle.FIGURE_WIDTH, 6.6), sharey=True)
+    fig.subplots_adjust(wspace=0.06, hspace=0.26, left=0.2, right=0.995, top=0.97, bottom=0.11)
+    for ax, indicator in zip(axes.flat, indicators, strict=True):
+        table = tables[indicator]
+        annotate_cells(ax, table, vmin=0, vmax=vmax, fontsize=6.5)
+        ax.xaxis.tick_top()
+        ax.set_xticks(range(len(ALGORITHM_LABEL)), ALGORITHM_LABEL.values(), rotation=30, ha="left", fontsize=6.5)
+        ax.set_yticks(range(len(arms)), [arm.replace("_", "-") for arm in arms], fontsize=7.5)
+        ax.tick_params(axis="y", pad=11)
+        ax.set_title(INDICATOR_LABEL[indicator], loc="left", fontweight="bold", fontsize=9, y=-0.085)
+        row, col = np.unravel_index(int(table.argmin()), table.shape)
+        ax.add_patch(Rectangle((col - 0.5, row - 0.5), 1, 1, fill=False, edgecolor="#D55E00", linewidth=1.8, zorder=3))
+        if ax in axes[:, 0]:
+            for position, arm in enumerate(arms):
+                ax.plot(
+                    -0.72,
+                    position,
+                    marker=TIER_MARKER[tiers[arm]],
+                    color=plotstyle.colour(arm, crossovers),
+                    markersize=4.5,
+                    markeredgecolor="white",
+                    markeredgewidth=0.4,
+                    clip_on=False,
+                )
+        ax.set_xlim(-0.5, len(ALGORITHM_LABEL) - 0.5)
+        ax.set_ylim(len(arms) - 0.5, -0.5)
+
+    handles = [
+        *tier_handles(),
+        Rectangle((0, 0), 1, 1, fill=False, edgecolor="#D55E00", linewidth=1.8, label="lowest mean regret"),
+    ]
+    fig.legend(handles=handles, loc="lower center", ncol=3, bbox_to_anchor=(0.55, 0.0), fontsize=7.5)
+    return fig
+
+
 def save(fig: plt.Figure, directory: Path, name: str) -> None:
     """Write one figure as PDF and PNG."""
     plotstyle.save(fig, directory / f"{name}.pdf", close=False)
@@ -376,6 +476,8 @@ def main() -> None:
     endpoint = load_indicators(config).filter(pl.col("fraction") == 1.0)
     save(profiles(endpoint, tier, crossovers), plots, "profiles")
     save(anytime(tier), plots, "anytime")
+    save(algorithm_indicator(endpoint, tier["indicators"]), plots, "algorithm_indicator")
+    save(regret_grid(endpoint, tier, crossovers), plots, "regret_grid")
 
 
 if __name__ == "__main__":
