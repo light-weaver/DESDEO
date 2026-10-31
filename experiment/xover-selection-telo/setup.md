@@ -113,8 +113,8 @@ At the 0.75 billing units per core-hour the old study recorded, 7.5 hours costs 
 Check that the rate still applies and that the project has enough.
 
 The run should use about 133 000 files on scratch, against a default limit of 500 000: about 34 000
-results, as many Snakemake metadata files, and 65 000 for the environments and the clone. Run sizes
-at the full budget have not been measured, so watch the 250 GiB limit with `csc-workspaces`.
+results, as many Snakemake metadata files, and 65 000 for the environments and the clone. The results
+take 12 GiB, well under the 250 GiB limit.
 
 ## If the job stops
 
@@ -146,5 +146,31 @@ run finishes. From your own machine:
 rsync -av bssainix@roihu-cpu.csc.fi:/scratch/project_2020514/bssainix/DESDEO/experiment/xover-selection-telo/results/ results/
 ```
 
-The raw runs sit in one tar per block under `results/runs/`. See [README.md](README.md) for the
-output layout.
+That copies 12 GiB, almost all of it raw runs:
+
+| Folder | Size |
+|---|---|
+| `runs/` | 6.2 GiB |
+| `front_runs/` | 5.2 GiB |
+| `indicators/` | 242 MiB |
+| `landscape/` | 117 MiB |
+| `mechanism/` | 13 MiB |
+| `fronts/` | 5.9 MiB |
+| `budgets/` | 1.2 MiB |
+
+If disk space is short, the analysis tables alone take about 400 MiB:
+
+```bash
+rsync -av --exclude='/runs/' --exclude='/front_runs/' \
+  bssainix@roihu-cpu.csc.fi:/scratch/project_2020514/bssainix/DESDEO/experiment/xover-selection-telo/results/ results/
+```
+
+`front_runs/` only feeds the reference fronts, which are frozen in `fronts/`. `runs/` holds the raw
+runs, one tar per block, and some of their contents reach no table:
+
+- run timings, generation and message counts, and per-run provenance;
+- the populations at each snapshot, needed for a new indicator or a plot of the populations;
+- the per-generation mechanism series, since `mechanism/` keeps only the mean and final value.
+
+If you skip these folders, copy them somewhere else before scratch deletes them. Getting them back
+means repeating the run. See [README.md](README.md) for the output layout.
