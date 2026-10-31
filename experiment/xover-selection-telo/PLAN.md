@@ -10,16 +10,12 @@ merged back. The EMO-paper version of the study stays on `experiment/xover-selec
 In NSGA-III, NSGA-II, IBEA, SPEA2 and AGE-MOEA-II, on problems whose Pareto set is close to a product
 of per-variable sets, what makes a real-coded crossover work is per-variable mixing: offspring take
 whole variable values from either parent. In SBX that is the offspring swap,
-`uniform_xover_probability = 0.5`. The EMO-paper evidence: the mixing-side arms take the top six
-places under all four Pareto-compliant indicators, and SBX without the swap (`sbx_no_uniform`) comes
-13th of 13, below no crossover at all. That evidence covers NSGA-III, NSGA-II and IBEA only, so
-SPEA2 and AGE-MOEA-II are out-of-sample tests of the claim.
+`uniform_xover_probability = 0.5`.
 
-**What would falsify it:** on the regenerated data, a non-mixing arm in the top six under any
-Pareto-compliant indicator, or the mixing split carrying a minority of the between-crossover sum of
-squares. Both tests also run on SPEA2 alone and on AGE-MOEA-II alone, so that the three older
-algorithms cannot average away a failure in the new two. `de_current` counts as non-mixing (see
-*The two DE arms*).
+**What would falsify it:** a non-mixing arm in the top six under any Pareto-compliant indicator, or
+the mixing split carrying a minority of the between-crossover sum of squares. Both tests run pooled
+and on each of the five algorithms, so that no algorithm can hide a failure in another. `de_current`
+counts as non-mixing (see *The two DE arms*).
 
 ## Factors
 

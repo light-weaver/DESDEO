@@ -67,7 +67,7 @@ algorithm), arms ordered by within-block ranks, the four Pareto-compliant indica
 
 | Script (old) | Question | Method and output | In the EMO draft |
 |---|---|---|---|
-| `analysis_tier.py` | Does the mixing side outrank the rest? Each arm's tier is read from its options: `mixing` (`sbx_default`, `sbx_platemo`, `sbx_jmetal`, `bex_uniform`, `uniform`), `portfolio` (`composite`), `de`, `off` (`none`) or `non_mixing` (which includes `de_current`); the mixing side is the first two | Per indicator: cuts by algorithm and by every problem property; whether the top k places are all mixing-side; between-crossover sum-of-squares share of the split, with and without `none`/`de`/`de_current`/`composite`; the top-k and share tests repeated on SPEA2 alone and AGE-MOEA-II alone; paired ablations (e.g. `sbx_default` vs `sbx_no_uniform`); budget consistency (τ between fractions); step-size control (does offspring step explain the split?); mechanism by tier. → `tier.json` | §4.1 Fig. 1, Fig. 2; §4.4 ablations, step control, mechanism. **The claim.** |
+| `analysis_tier.py` | Does the mixing side outrank the rest? Each arm's tier is read from its options: `mixing` (`sbx_default`, `sbx_platemo`, `sbx_jmetal`, `bex_uniform`, `uniform`), `portfolio` (`composite`), `de`, `off` (`none`) or `non_mixing` (which includes `de_current`); the mixing side is the first two | Per indicator: cuts by algorithm and by every problem property; whether the top k places are all mixing-side; between-crossover sum-of-squares share of the split, with and without `none`/`de`/`de_current`/`composite`; the top-k and share tests repeated on each of the five algorithms; paired ablations (e.g. `sbx_default` vs `sbx_no_uniform`); budget consistency (τ between fractions); step-size control (does offspring step explain the split?); mechanism by tier. → `tier.json` | §4.1 Fig. 1, Fig. 2; §4.4 ablations, step control, mechanism. **The claim.** |
 | `analysis_splits.py` | Does the ordering survive problem properties? | For each split in `SPLITS`: block ranks on each side, τ between sides, permutation p (999 whole-instance shuffles); per algorithm and within m = 3; per-side Friedman/CD; performance profiles from `log_ratios`. → `splits.json` | §4.3 Table 2, Fig. 3, Fig. 4 |
 | `analysis_rq7_algorithms.py` | Do algorithms differ, and does the best crossover depend on the algorithm? | Classical and generalised ω² of algorithm, crossover and their interaction, over 5 algorithms; Friedman over algorithms; per-algorithm orderings and τ between them; whether the pooled winner wins inside each algorithm. → `rq7_algorithms.json` | §4.1 ω² values, §4.2 |
 | `analysis_rq10_indicators.py` | Does the answer depend on the indicator? | Per-indicator orderings, pairwise τ, agreement within the compliant four (PCA/PERMANOVA are companion-paper material). → `rq10_indicators.json` | §4.1 Fig. 2a |
@@ -118,12 +118,12 @@ Each of these produced wrong numbers at least once (bug numbers refer to `.wolf/
 
 ## Inputs the paper text relied on that this pipeline no longer produces
 
-- **The mutation result.** The draft's setup section justifies fixing polynomial mutation by the
+- **The mutation result.** The draft's setup section justified fixing polynomial mutation by the
   Study A result, mutation ω² = 0.0004 among real operators (`paper/setup.md:42`,
-  `PAPER-PLAN.md:122`). Options:
-  - cite the EMO paper for it;
-  - or add mutation levels back to `config.yaml` and run them on a core subset. Every block runs every
-    listed mutation, so a core subset needs a small extension to `xover.design.run_blocks`.
+  `PAPER-PLAN.md:122`). The EMO paper was never submitted, so this cannot be cited, and the paper
+  states polynomial mutation as a fixed choice. Measuring its effect would mean adding mutation levels
+  back to `config.yaml` and running them on a core subset. Every block runs every listed mutation, so
+  a core subset needs a small extension to `xover.design.run_blocks`.
 - **Feature stability (ICC).** RQ3's gate used split-half reproducibility and ICC over 11 seeded
   samples. With one sample per instance, stability can only be checked by drawing a second sample
   (change `landscape.sample_seed` into a list).
