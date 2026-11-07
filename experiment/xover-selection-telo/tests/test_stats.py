@@ -59,7 +59,13 @@ def test_holm_correction_steps_down_and_keeps_the_input_order():
 def test_critical_difference_matches_demsar_at_four_treatments():
     # Demsar 2006, section 3.2.2: k = 4, N = 14 gives CD = 2.569 sqrt(20 / 84) = 1.25.
     assert stats.critical_difference(4, 14) == pytest.approx(1.2536, abs=1e-3)
-    assert np.isnan(stats.critical_difference(20, 14))
+    assert np.isnan(stats.critical_difference(1, 14))
+
+
+@pytest.mark.parametrize(("k", "q"), [(2, 1.960), (5, 2.728), (10, 3.164), (14, 3.354), (15, 3.391)])
+def test_critical_difference_reproduces_the_tabulated_q_values(k, q):
+    # q_0.05 from Demsar 2006 (k <= 10) and the tables that extend it, recovered from CD with N = 1.
+    assert stats.critical_difference(k, 1) / np.sqrt(k * (k + 1) / 6) == pytest.approx(q, abs=5e-4)
 
 
 def test_the_single_best_level_sits_between_no_knowledge_and_per_instance_knowledge(grid):

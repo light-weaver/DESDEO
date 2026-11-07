@@ -254,25 +254,14 @@ def holm_correct(p_values: list[float]) -> list[float]:
 
 
 def critical_difference(n_treatments: int, n_blocks: int, alpha: float = 0.05) -> float:
-    """Return the Nemenyi critical difference for a Friedman test at `alpha`."""
-    q_alpha = {
-        2: 1.960,
-        3: 2.343,
-        4: 2.569,
-        5: 2.728,
-        6: 2.850,
-        7: 2.949,
-        8: 3.031,
-        9: 3.102,
-        10: 3.164,
-        11: 3.219,
-        12: 3.268,
-        13: 3.313,
-        14: 3.354,
-        15: 3.391,
-    }.get(n_treatments)
-    if q_alpha is None or n_blocks == 0:
+    """Return the Nemenyi critical difference for a Friedman test at `alpha`.
+
+    q_alpha is the studentized range quantile at infinite degrees of freedom over sqrt(2), which
+    reproduces Demsar's (2006) table to its three decimals and continues past its ten treatments.
+    """
+    if n_treatments < 2 or n_blocks == 0:  # noqa: PLR2004
         return float("nan")
+    q_alpha = stats.studentized_range.ppf(1 - alpha, n_treatments, np.inf) / np.sqrt(2)
     return float(q_alpha * np.sqrt(n_treatments * (n_treatments + 1) / (6 * n_blocks)))
 
 
