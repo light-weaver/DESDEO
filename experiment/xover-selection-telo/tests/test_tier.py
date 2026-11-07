@@ -17,8 +17,11 @@ from xover import problem_properties
 
 EXPECTED = {
     "sbx_default": "mixing",
+    "sbx_default_eta20": "mixing",
     "sbx_platemo": "mixing",
+    "sbx_platemo_eta20": "mixing",
     "sbx_jmetal": "mixing",
+    "sbx_pisa": "mixing",
     "bex_uniform": "mixing",
     "uniform": "mixing",
     "composite": "portfolio",
@@ -37,8 +40,8 @@ def test_every_arm_has_the_expected_tier(config):
     assert {arm: tier(options) for arm, options in config["crossovers"].items()} == EXPECTED
 
 
-def test_the_mixing_side_has_six_arms_as_the_falsification_test_says():
-    assert sum(t in MIXING_SIDE for t in EXPECTED.values()) == 6
+def test_the_mixing_side_has_nine_arms():
+    assert sum(t in MIXING_SIDE for t in EXPECTED.values()) == 9
 
 
 def test_the_off_arm_is_not_counted_as_mixing_despite_its_uniform_rate(config):

@@ -12,7 +12,8 @@ of per-variable sets, what makes a real-coded crossover work is per-variable mix
 whole variable values from either parent. In SBX that is the offspring swap,
 `uniform_xover_probability = 0.5`.
 
-**What would falsify it:** a non-mixing arm in the top six under any Pareto-compliant indicator, or
+**What would falsify it:** a non-mixing arm in the top places, one per mixing-side arm (six of 14 arms,
+nine of 17), under any Pareto-compliant indicator, or
 the mixing split carrying a minority of the between-crossover sum of squares. Both tests run pooled
 and on each of the five algorithms, so that no algorithm can hide a failure in another. `de_current`
 counts as non-mixing (see *The two DE arms*).
@@ -21,13 +22,14 @@ counts as non-mixing (see *The two DE arms*).
 four indicators, and fails in 9 of the 20 algorithm × indicator tests: `sax` reaches the top six under
 NSGA-II and SPEA2 on all four indicators, and on IBEA the mixing split carries 0.403 of the sum of
 squares under the additive epsilon. NSGA-III and AGE-MOEA-II pass all four. `sax` averages one variable
-and swaps none, so it is non-mixing.
+and swaps none, so it is non-mixing. This was on the 14-arm grid; the three SBX arms added on
+2026-11-07 raise the mixing side to nine, and the test is rerun once they are scored.
 
 ## Factors
 
 | Factor | Levels |
 |---|---|
-| Crossover | 14: `sbx_default`, `sbx_platemo`, `sbx_jmetal`, `sbx_no_uniform`, `blend`, `bex`, `bex_uniform`, `uniform`, `sax`, `de`, `de_current`, `pcx`, `composite`, `none` |
+| Crossover | 17: `sbx_default`, `sbx_default_eta20`, `sbx_platemo`, `sbx_platemo_eta20`, `sbx_jmetal`, `sbx_pisa`, `sbx_no_uniform`, `blend`, `bex`, `bex_uniform`, `uniform`, `sax`, `de`, `de_current`, `pcx`, `composite`, `none` |
 | Algorithm | 5: NSGA-III, NSGA-II, IBEA, SPEA2, AGE-MOEA-II |
 | Instance | 150: 108 benchmark (64 DTLZ/WFG in four (m, n) blocks, 40 ZCAT, 4 rotated DTLZ) and 42 real-world (RE, rocket injector, river pollution, GAA ladder, MetallAppl) |
 | Seed | 11 (0 to 10) |
@@ -56,7 +58,7 @@ seed.
 NSGA-III with SBX, one of the compared configurations, and the paper says so. Every run is dumped at
 21 budget fractions, so the analysis can be repeated at any shorter budget.
 
-**Reference fronts.** Merged archives of all 5 algorithms × 14 crossovers at seeds 0 and 1, reduced
+**Reference fronts.** Merged archives of all 5 algorithms × 17 crossovers at seeds 0 and 1, reduced
 to a uniform subset of 1 500 to 4 000 points by greedy max-min selection. The ideal and nadir come
 from the whole merged pool. Indicators normalise into that box. Hypervolume uses
 `r = 1 + 1/H` (Ishibuchi et al. 2018).
@@ -76,7 +78,7 @@ DE/rand/1/bin as its DE member.
 
 - **Tier.** `de_current` is non-mixing by mechanism: at CR = 1 every component comes from the mutant,
   so an offspring is its target plus a difference vector and takes no whole value from a second
-  solution. It therefore enters the falsification test, and a top-six place for it counts against
+  solution. It therefore enters the falsification test, and a top place for it counts against
   the claim. `de` stays in its own tier, because binomial crossover at CR = 0.9 does mix the mutant
   and the target per variable.
 - **Not an ablation.** The arms differ in base vector, donor rule, CR and the forced component, so
@@ -137,6 +139,7 @@ paper has to name this difference.
 | Raw run dumps kept, one tar per block | The cluster pipeline deleted each run after scoring it. Two files per run would take the study past Roihu's default 500 000 scratch files |
 | SPEA2 and AGE-MOEA-II added (3 → 5 algorithms) | Two selection schemes the first three do not cover: strength fitness with nearest-neighbour density, and a survival score from the estimated front geometry |
 | `de_current` added (13 → 14 crossovers) | DESDEO split DE/current/1 out of `DifferentialEvolutionCrossover` (`6b023c55`), which gives a DE variant with no per-variable mixing |
+| `sbx_default_eta20`, `sbx_platemo_eta20` and `sbx_pisa` added (14 → 17 crossovers, 2026-11-07) | One-parameter contrasts for the SBX question. `sbx_platemo_eta20` is PlatEMO's operator at its shipped η = 20. `sbx_default_eta20` against `sbx_default` isolates η, and against `sbx_jmetal` isolates the swap of uncrossed variables. `sbx_pisa` is `sbx_default` with every variable crossed (`xover_probability` 1.0). Its name follows the request; its parameters have not been checked against PISA's code |
 
 ## Verification
 

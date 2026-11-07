@@ -12,7 +12,7 @@ def test_config_is_valid(config):
 
 
 def test_grid_size(config):
-    """150 instances x 5 algorithms x 14 crossovers x 1 mutation, at 11 seeds each."""
+    """150 instances x 5 algorithms x 17 crossovers x 1 mutation, at 11 seeds each."""
     instances = design.selected_instances(config)
     assert len(instances) == 150
     suites = [i.suite for i in instances.values()]
@@ -24,8 +24,8 @@ def test_grid_size(config):
     }
     families = [i.family for i in instances.values()]
     assert {f: families.count(f) for f in set(families)} == {"benchmark": 108, "real_world": 42}
-    assert len(design.run_blocks(config)) * len(config["run"]["seeds"]) == 115_500
-    assert len(design.front_blocks(config)) * len(config["reference_front"]["seeds"]) == 150 * 140
+    assert len(design.run_blocks(config)) * len(config["run"]["seeds"]) == 140_250
+    assert len(design.front_blocks(config)) * len(config["reference_front"]["seeds"]) == 150 * 170
 
 
 def test_readmitted_instance_is_present(config):

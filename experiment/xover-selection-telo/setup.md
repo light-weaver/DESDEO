@@ -116,6 +116,20 @@ The run should use about 133 000 files on scratch, against a default limit of 50
 results, as many Snakemake metadata files, and 65 000 for the environments and the clone. The results
 take 12 GiB, well under the 250 GiB limit.
 
+## Adding arms to a finished run
+
+Add the arm to `crossovers` and to `run.crossovers` in `config/config.yaml`, push, then `git pull` on
+Roihu and submit the same command as for the full run. Snakemake keeps the existing run tars, because
+each block depends only on its own crossover's options and the instance budget. It runs the new
+blocks of the main grid and the new arms' front runs. Then it re-freezes every reference front and
+rescores every instance, since `reference_front.crossovers: all` puts the new arms into the fronts.
+
+Check the plan first with `uv run --group experiment snakemake -n` from the study directory. For
+the three SBX arms added on 2026-11-07 it should list 2 250 `run_block`, 2 250 `front_runs`, 150
+`reference_front` and 750 `score` jobs, plus the targets that collect them. Many more `run_block`
+jobs means Snakemake has decided to rerun the existing grid; stop and find out why before
+submitting.
+
 ## If the job stops
 
 Submit the same command again. The workflow continues from the finished steps.

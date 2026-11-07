@@ -11,8 +11,8 @@ results: results
 run:
   instances: all
   algorithms: [nsga3, nsga2, ibea, spea2, agemoea2]
-  crossovers: [sbx_default, sbx_platemo, sbx_jmetal, sbx_no_uniform, blend, bex, bex_uniform,
-               uniform, sax, de, de_current, pcx, composite, none]
+  crossovers: [sbx_default, sbx_default_eta20, sbx_platemo, sbx_platemo_eta20, sbx_jmetal, sbx_pisa,
+               sbx_no_uniform, blend, bex, bex_uniform, uniform, sax, de, de_current, pcx, composite, none]
   mutations: [polynomial]
   seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 
@@ -100,17 +100,27 @@ algorithms:
   agemoea2: {tournament_size: 2}
 
 crossovers:
-  # Three SBX arms, each with a framework's operator, plus a control with the uniform swap off.
-  # PLAN.md records where their parameters differ from what the framework ships.
+  # SBX arms with a framework's operator, two at eta 20 as well as 30, one crossing every variable,
+  # and a control with the uniform swap off. PLAN.md records where their parameters differ from
+  # what the framework ships.
   sbx_default: {name: SimulatedBinaryCrossover, pair_xover_probability: 1.0, xover_probability: 0.5,
                 xover_distribution: 30.0, truncated: true, uniform_xover_probability: 0.5,
                 swap_uncrossed_variables: false}
+  sbx_default_eta20: {name: SimulatedBinaryCrossover, pair_xover_probability: 1.0, xover_probability: 0.5,
+                      xover_distribution: 20.0, truncated: true, uniform_xover_probability: 0.5,
+                      swap_uncrossed_variables: false}
   sbx_platemo: {name: SimulatedBinaryCrossover, pair_xover_probability: 1.0, xover_probability: 0.5,
                 xover_distribution: 30.0, truncated: false, uniform_xover_probability: 0.5,
                 swap_uncrossed_variables: false}
+  sbx_platemo_eta20: {name: SimulatedBinaryCrossover, pair_xover_probability: 1.0, xover_probability: 0.5,
+                      xover_distribution: 20.0, truncated: false, uniform_xover_probability: 0.5,
+                      swap_uncrossed_variables: false}
   sbx_jmetal: {name: SimulatedBinaryCrossover, pair_xover_probability: 1.0, xover_probability: 0.5,
                xover_distribution: 20.0, truncated: true, uniform_xover_probability: 0.5,
                swap_uncrossed_variables: true}
+  sbx_pisa: {name: SimulatedBinaryCrossover, pair_xover_probability: 1.0, xover_probability: 1.0,
+             xover_distribution: 30.0, truncated: true, uniform_xover_probability: 0.5,
+             swap_uncrossed_variables: false}
   sbx_no_uniform: {name: SimulatedBinaryCrossover, pair_xover_probability: 1.0, xover_probability: 0.5,
                    xover_distribution: 30.0, truncated: true, uniform_xover_probability: 0.0,
                    swap_uncrossed_variables: false}
