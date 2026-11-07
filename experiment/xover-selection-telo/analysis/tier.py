@@ -178,8 +178,8 @@ def falsification(endpoint: pl.DataFrame, indicator: str, tiers: dict[str, str])
     `endpoint` is raw indicator rows at the final fraction. Regret is computed inside each scope, so
     that the sum of squares of one algorithm is not scaled by the others (pitfall 1 of docs/phase6.md).
     The claim fails in a scope if a non-mixing arm reaches the top places, as many as the mixing side
-    has arms, or if the mixing split carries a minority of the between-crossover sum of squares on all
-    14 arms.
+    has arms, or if the mixing split carries a minority of the between-crossover sum of squares over
+    all the arms.
     """
     scopes = {"all": endpoint}
     for algorithm in sorted(endpoint["algorithm"].unique().to_list()):

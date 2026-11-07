@@ -1,8 +1,8 @@
 """Phase 6: the figures that `tier.json` and the indicator tables already support.
 
-- `cd_indicators`: critical-difference diagrams of the 14 arms under each compliant indicator.
+- `cd_indicators`: critical-difference diagrams of the arms under each compliant indicator.
 - `cd_family`: the same on benchmark and on real-world problems, under IGD+.
-- `rank_grid`: every arm's mean rank pooled and under each algorithm, with the top six outlined.
+- `rank_grid`: every arm's mean rank pooled and under each algorithm, with the top places outlined.
 - `profiles`: performance profiles under each algorithm, IGD+.
 - `anytime`: Kendall tau between each fraction's ranking and the final one.
 - `algorithm_indicator`: each algorithm's mean rank on each indicator.
@@ -57,11 +57,8 @@ ALGORITHM_LABEL = {
 TAU_THRESHOLD = 0.95
 """The agreement with the final ranking that counts as settled."""
 
-WHITE_TEXT_BELOW = 6
-"""Mean ranks below this sit on dark enough cells of the rank grid to need white text."""
-
 WHITE_TEXT_SHARE = 0.38
-"""The same limit as a share of a heatmap's colour range."""
+"""Cells in the darkest part of a heatmap's colour range, as a share of it, get white text."""
 
 CD_ABOVE = 0.40
 """Inches above a CD diagram's axis: tick labels, the panel title and the CD bracket."""
@@ -213,7 +210,7 @@ def cd_figure(panels: list[Panel], tiers: dict[str, str], crossovers: dict[str, 
 
 
 def rank_grid(tier: dict, crossovers: dict[str, Any]) -> plt.Figure:
-    """Mean ranks, one panel per indicator, with the top six of each column outlined.
+    """Mean ranks, one panel per indicator, with each column's top places outlined, one per mixing-side arm.
 
     An outlined cell on a non-mixing arm is a failure of PLAN.md's first falsification test. Ranks are
     read from the cuts, so the pooled column is ranked over all 750 blocks and the others over 150.
@@ -229,7 +226,7 @@ def rank_grid(tier: dict, crossovers: dict[str, Any]) -> plt.Figure:
     for ax, indicator in zip(axes.flat, indicators, strict=True):
         cuts = [tier["cuts"][indicator][column] for column in columns]
         values = np.array([[cut["mean_ranks"][arm] for cut in cuts] for arm in arms])
-        ax.imshow(values, cmap="Greens_r", vmin=1, vmax=14, aspect="auto")
+        ax.imshow(values, cmap="Greens_r", vmin=1, vmax=len(arms), aspect="auto")
         ax.grid(visible=False)
         ax.spines[:].set_visible(False)
         ax.tick_params(length=0, labelsize=6.5)
@@ -252,7 +249,7 @@ def rank_grid(tier: dict, crossovers: dict[str, Any]) -> plt.Figure:
                 )
             for col, cut in enumerate(cuts):
                 rank = values[row, col]
-                colour = "white" if rank < WHITE_TEXT_BELOW else INK
+                colour = "white" if (rank - 1) / (len(arms) - 1) < WHITE_TEXT_SHARE else INK
                 ax.text(col, row, f"{rank:.1f}", ha="center", va="center", fontsize=6.5, color=colour)
                 if arm in cut["order"][: cut["k_mixing_side"]]:
                     outline = tiers[arm] in ("non_mixing", "off", "de")
@@ -273,7 +270,7 @@ def rank_grid(tier: dict, crossovers: dict[str, Any]) -> plt.Figure:
     handles = [
         *tier_handles(),
         Rectangle(
-            (0, 0), 1, 1, fill=False, edgecolor="#D55E00", linewidth=1.8, label="top six, not on the mixing side"
+            (0, 0), 1, 1, fill=False, edgecolor="#D55E00", linewidth=1.8, label="top places, not on the mixing side"
         ),
     ]
     fig.legend(handles=handles, loc="lower center", ncol=3, bbox_to_anchor=(0.55, 0.0), fontsize=7.5)
@@ -281,7 +278,7 @@ def rank_grid(tier: dict, crossovers: dict[str, Any]) -> plt.Figure:
 
 
 def profiles(endpoint: pl.DataFrame, tier: dict, crossovers: dict[str, Any], indicator: str = "igd_plus") -> plt.Figure:
-    """Performance profiles of the 14 arms under each algorithm."""
+    """Performance profiles of the arms under each algorithm."""
     factors = np.logspace(0, 1, 240)
     ratios = log_ratios(endpoint, indicator)
     arms = tier["cuts"][indicator]["all"]["order"]

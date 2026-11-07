@@ -64,11 +64,11 @@ def _member_mixes(options: dict[str, Any]) -> bool:
 # one dashed line among the solid blues, and `bex` and `bex_uniform` are one purple, dashed and solid.
 
 FAMILY_COLOURS = {
-    "sbx": ["#08519C", "#2171B5", "#4292C6", "#6BAED6"],
+    "sbx": ["#08306B", "#08519C", "#2171B5", "#4292C6", "#0E7C9B", "#2AA5C4", "#6BAED6"],
     "bex": ["#54278F", "#807DBA"],
 }
-"""Ramps for the two families, assigned in config order. Both stop short of the pale end, so that no
-arm is the faintest line on every figure."""
+"""Ramps for the two families, assigned in config order. Seven SBX arms are more than blues can keep
+apart, so the ramp turns towards cyan; figures that must tell SBX arms apart need another encoding."""
 
 SOLO_COLOURS = {
     "uniform": "#009E73",

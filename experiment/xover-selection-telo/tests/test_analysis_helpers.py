@@ -214,5 +214,5 @@ def test_arm_attributes(config):
 def test_every_arm_has_a_distinct_colour_and_a_line_style(config):
     crossovers = config["crossovers"]
     colours = [plotstyle.colour(arm, crossovers) for arm in crossovers]
-    assert len(colours) == len(set(colours)) == 14
+    assert len(colours) == len(set(colours)) == len(crossovers)
     assert all(plotstyle.arm_style(arm, crossovers)["linestyle"] is not None for arm in crossovers)
