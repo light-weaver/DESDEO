@@ -139,7 +139,7 @@ paper has to name this difference.
 | Raw run dumps kept, one tar per block | The cluster pipeline deleted each run after scoring it. Two files per run would take the study past Roihu's default 500 000 scratch files |
 | SPEA2 and AGE-MOEA-II added (3 → 5 algorithms) | Two selection schemes the first three do not cover: strength fitness with nearest-neighbour density, and a survival score from the estimated front geometry |
 | `de_current` added (13 → 14 crossovers) | DESDEO split DE/current/1 out of `DifferentialEvolutionCrossover` (`6b023c55`), which gives a DE variant with no per-variable mixing |
-| `sbx_default_eta20`, `sbx_platemo_eta20` and `sbx_pisa` added (14 → 17 crossovers, 2026-11-07) | One-parameter contrasts for the SBX question. `sbx_platemo_eta20` is PlatEMO's operator at its shipped η = 20. `sbx_default_eta20` against `sbx_default` isolates η, and against `sbx_jmetal` isolates the swap of uncrossed variables. `sbx_pisa` is `sbx_default` with every variable crossed (`xover_probability` 1.0). Its name follows the request; its parameters have not been checked against PISA's code |
+| `sbx_default_eta20`, `sbx_platemo_eta20` and `sbx_pisa` added (14 → 17 crossovers, 2026-11-07) | One-parameter contrasts for the SBX question. `sbx_platemo_eta20` is PlatEMO's operator at its shipped η = 20. `sbx_default_eta20` against `sbx_default` isolates η, and against `sbx_jmetal` isolates the swap of uncrossed variables. `sbx_pisa` is `sbx_default_eta20` with every variable crossed (`xover_probability` 1.0), so the two isolate the per-variable rate. Its name follows the request; its parameters have not been checked against PISA's code |
 
 ## Verification
 

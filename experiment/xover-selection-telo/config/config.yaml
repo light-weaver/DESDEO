@@ -119,7 +119,7 @@ crossovers:
                xover_distribution: 20.0, truncated: true, uniform_xover_probability: 0.5,
                swap_uncrossed_variables: true}
   sbx_pisa: {name: SimulatedBinaryCrossover, pair_xover_probability: 1.0, xover_probability: 1.0,
-             xover_distribution: 30.0, truncated: true, uniform_xover_probability: 0.5,
+             xover_distribution: 20.0, truncated: true, uniform_xover_probability: 0.5,
              swap_uncrossed_variables: false}
   sbx_no_uniform: {name: SimulatedBinaryCrossover, pair_xover_probability: 1.0, xover_probability: 0.5,
                    xover_distribution: 30.0, truncated: true, uniform_xover_probability: 0.0,
