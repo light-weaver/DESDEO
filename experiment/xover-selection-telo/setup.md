@@ -172,6 +172,15 @@ That copies 12 GiB, almost all of it raw runs:
 | `fronts/` | 5.9 MiB |
 | `budgets/` | 1.2 MiB |
 
+Then check the copy from the study directory:
+
+```bash
+uv run --group experiment python -m analysis.check
+```
+
+It fails if any front or table is missing, was built from fewer runs than the config asks for, or
+was scored against an earlier front. A copy taken while the job is still running fails it.
+
 If disk space is short, the analysis tables alone take about 400 MiB:
 
 ```bash
