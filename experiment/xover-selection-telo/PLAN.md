@@ -22,8 +22,16 @@ counts as non-mixing (see *The two DE arms*).
 four indicators, and fails in 9 of the 20 algorithm × indicator tests: `sax` reaches the top six under
 NSGA-II and SPEA2 on all four indicators, and on IBEA the mixing split carries 0.403 of the sum of
 squares under the additive epsilon. NSGA-III and AGE-MOEA-II pass all four. `sax` averages one variable
-and swaps none, so it is non-mixing. This was on the 14-arm grid; the three SBX arms added on
-2026-11-07 raise the mixing side to nine, and the test is rerun once they are scored.
+and swaps none, so it is non-mixing. This was on the 14-arm grid.
+
+**Result on 17 arms (2026-11-09):** still falsified. The algorithm × indicator tests fail in the same
+9 of 20 cells as on 14 arms, with the IBEA share under the additive epsilon now 0.411. The pooled test
+now fails under IGD+, HV and R2, because `sbx_pisa` falls to 10th or 11th place and `sax` takes the
+ninth. The mixing split's share of the sum of squares stays between 0.68 and 0.75 pooled.
+`sbx_pisa` differs from `sbx_default_eta20` only in crossing every variable, and its mean rank is 1.6
+to 2.8 places worse, more than the critical difference of 0.90 under every indicator. The swap alone
+does not make SBX work: crossing about half the variables matters too. η = 20 against 30 moves the
+mean rank by at most 0.3, for both `sbx_default` and `sbx_platemo`.
 
 ## Factors
 
