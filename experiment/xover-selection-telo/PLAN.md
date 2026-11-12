@@ -31,7 +31,9 @@ ninth. The mixing split's share of the sum of squares stays between 0.68 and 0.7
 `sbx_pisa` differs from `sbx_default_eta20` only in crossing every variable, and its mean rank is 1.6
 to 2.8 places worse, more than the critical difference of 0.90 under every indicator. The swap alone
 does not make SBX work: crossing about half the variables matters too. η = 20 against 30 moves the
-mean rank by at most 0.3, for both `sbx_default` and `sbx_platemo`.
+mean rank by at most 0.3, for both `sbx_default` and `sbx_platemo`. Rescored on 149 instances against
+fronts that include the two mutation probes (2026-11-12), the same 9 cells and the same three pooled
+tests fail, the IBEA share is 0.415 and the pooled shares are 0.68 to 0.76.
 
 ## Factors
 
@@ -79,6 +81,28 @@ population converges and the mutation's does not. A probe that loses to its SBX 
 on that alone. The probes change the mutation as well as the crossover, so the operator comparison and
 its falsification tests leave them out (`analysis/common.py` drops them at load) and
 `analysis/tier.py` reports them in a section of their own.
+
+**Probe result (2026-11-12):** the reading fails. Each figure below is the share of the 745
+(instance, algorithm) blocks where the first arm has the lower regret at the final budget, for IGD+,
+additive epsilon, HV and R2 in that order.
+
+| Contrast | IGD+ | ε+ | HV | R2 |
+|---|---|---|---|---|
+| `uniform_pm50` beats `sbx_default_eta20` | 0.18 | 0.27 | 0.20 | 0.20 |
+| `uniform_pm100` beats `sbx_pisa` | 0.14 | 0.23 | 0.17 | 0.17 |
+| `uniform_pm50` beats `uniform` | 0.14 | 0.26 | 0.17 | 0.16 |
+| `uniform_pm100` beats `uniform` | 0.10 | 0.19 | 0.11 | 0.09 |
+| `sbx_default_eta20` beats `uniform` | 0.34 | 0.47 | 0.37 | 0.37 |
+
+Both probes lose to their SBX partner in 73 to 86% of blocks, and in at least 69% under each algorithm. More
+mutation makes uniform crossover worse at each step: among all 19 arms `uniform` has a mean rank of
+5.4 to 7.2, `uniform_pm50` 11.2 to 12.2 and `uniform_pm100` 14.0 to 15.6, last or next to last with
+`sbx_no_uniform`. So polynomial mutation on half or all of the variables does not do what SBX's
+spread does. The last row shows that the spread is not what makes SBX good either. Plain `uniform`
+beats `sbx_default_eta20` in 53 to 66% of blocks. That margin depends on the algorithm: under IGD+
+`uniform` wins about 4 blocks in 5 under NSGA-II and SPEA2 and about half under AGE-MOEA-II and IBEA.
+The bounds caveat above is still untested. `offspring_step` is measured on the crossover's output
+before mutation, so the mechanism tables cannot compare the two step sizes.
 
 **Reference fronts.** Merged archives of all 5 algorithms × 19 arms (17 crossovers and the 2 probes) at seeds 0 and 1, reduced
 to a uniform subset of 1 500 to 4 000 points by greedy max-min selection. The ideal and nadir come
