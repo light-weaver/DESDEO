@@ -133,8 +133,8 @@ submitting. For the two mutation probes added on 2026-11-12, with `re37` removed
 `problem_data`, `budget_table` and `combine_features`, which list the instances.
 
 An arm that needs a mutation of its own also goes under `run.mutation_overrides`, mapped to a mutation
-defined under `mutations`. It then runs with that one mutation only, and the analysis keeps it out
-of the operator comparison.
+defined under `mutations`. It then runs with that one mutation only. The analysis counts it as an
+ordinary arm.
 
 ## If the job stops
 

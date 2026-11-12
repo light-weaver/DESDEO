@@ -13,7 +13,7 @@ whole variable values from either parent. In SBX that is the offspring swap,
 `uniform_xover_probability = 0.5`.
 
 **What would falsify it:** a non-mixing arm in the top places, one per mixing-side arm (six of 14 arms,
-nine of 17), under any Pareto-compliant indicator, or
+nine of 17, eleven of 19), under any Pareto-compliant indicator, or
 the mixing split carrying a minority of the between-crossover sum of squares. Both tests run pooled
 and on each of the five algorithms, so that no algorithm can hide a failure in another. `de_current`
 counts as non-mixing (see *The two DE arms*).
@@ -35,15 +35,27 @@ mean rank by at most 0.3, for both `sbx_default` and `sbx_platemo`. Rescored on 
 fronts that include the two mutation probes (2026-11-12), the same 9 cells and the same three pooled
 tests fail, the IBEA share is 0.415 and the pooled shares are 0.68 to 0.76.
 
+**Result on 19 arms (2026-11-12):** falsified in every scope. The two mutation probes now count as
+arms of their own, and both are on the mixing side because they swap whole variables. All 24 tests
+fail (pooled and the five algorithms, under four indicators). The probes rank 12th or 13th
+(`uniform_pm50`) and 17th to 19th (`uniform_pm100`), so two of the eleven top places go to arms off
+the mixing side: `sax` in every scope except IBEA under the additive epsilon and HV, where
+`de_current` takes it, and in most scopes `de` as well. The mixing split's share of the sum of squares
+drops below one half everywhere: 0.33 to 0.42 pooled, at most 0.49 under any one algorithm and 0.09 to
+0.16 under IBEA. Inside each block the other 17 arms keep their order, because regret is a monotone
+rescaling within an instance; their mean ranks still shift by where the probes land. Per-variable swapping is therefore not enough on its own: uniform
+crossover followed by heavy mutation swaps as much as `uniform` and ranks among the non-mixing arms.
+The 17-arm tests above are as of `bf89d803`; `analysis/tier.py` no longer computes them.
+
 ## Factors
 
 | Factor | Levels |
 |---|---|
-| Crossover | 17: `sbx_default`, `sbx_default_eta20`, `sbx_platemo`, `sbx_platemo_eta20`, `sbx_jmetal`, `sbx_pisa`, `sbx_no_uniform`, `blend`, `bex`, `bex_uniform`, `uniform`, `sax`, `de`, `de_current`, `pcx`, `composite`, `none` |
+| Crossover | 19: `sbx_default`, `sbx_default_eta20`, `sbx_platemo`, `sbx_platemo_eta20`, `sbx_jmetal`, `sbx_pisa`, `sbx_no_uniform`, `blend`, `bex`, `bex_uniform`, `uniform`, `uniform_pm50`, `uniform_pm100`, `sax`, `de`, `de_current`, `pcx`, `composite`, `none` |
 | Algorithm | 5: NSGA-III, NSGA-II, IBEA, SPEA2, AGE-MOEA-II |
 | Instance | 149: 108 benchmark (64 DTLZ/WFG in four (m, n) blocks, 40 ZCAT, 4 rotated DTLZ) and 41 real-world (RE, rocket injector, river pollution, GAA ladder, MetallAppl) |
 | Seed | 11 (0 to 10) |
-| Mutation probe | 2 arms outside the operator comparison: `uniform_pm50` and `uniform_pm100`, uniform crossover with polynomial mutation at rate 0.5 and 1.0 |
+| Mutation probe | 2 of the 19 arms, `uniform_pm50` and `uniform_pm100`: uniform crossover with polynomial mutation at rate 0.5 and 1.0 |
 
 Held fixed:
 - polynomial mutation at rate 1/n and index 20, except in the two mutation probes;
@@ -78,9 +90,10 @@ variables, in place of the 1/n mutation, and is compared with the SBX arm that m
 the reading. The match is loose in one respect: polynomial mutation scales its step by the variable's
 bounds, while SBX scales it by the distance between the parents, so SBX's step shrinks as the
 population converges and the mutation's does not. A probe that loses to its SBX partner may be losing
-on that alone. The probes change the mutation as well as the crossover, so the operator comparison and
-its falsification tests leave them out (`analysis/common.py` drops them at load) and
-`analysis/tier.py` reports them in a section of their own.
+on that alone. The probes are arms of the comparison like any other, on the mixing side, and the
+matched contrasts are among `analysis/tier.py`'s ablations. They stay out of the step-size control
+only: `offspring_step` is measured on the crossover's output before mutation, so for them it is
+uniform crossover's step without their mutation.
 
 **Probe result (2026-11-12):** the reading fails. Each figure below is the share of the 745
 (instance, algorithm) blocks where the first arm has the lower regret at the final budget, for IGD+,
@@ -188,6 +201,7 @@ paper has to name this difference.
 | `sbx_default_eta20`, `sbx_platemo_eta20` and `sbx_pisa` added (14 → 17 crossovers, 2026-11-07) | One-parameter contrasts for the SBX question. `sbx_platemo_eta20` is PlatEMO's operator at its shipped η = 20. `sbx_default_eta20` against `sbx_default` isolates η, and against `sbx_jmetal` isolates the swap of uncrossed variables. `sbx_pisa` is `sbx_default_eta20` with every variable crossed (`xover_probability` 1.0), so the two isolate the per-variable rate. Its name follows the request; its parameters have not been checked against PISA's code |
 | `re37` removed (150 → 149 instances, 2026-11-12) | RE3-7 is the rocket injector problem without TW4. The subset sampler drew the same objective triple from the four-objective rocket injector (`rocket_injector_design_m3_TF_max-TT_max-Xcc_max`): same functions, same bounds. Counting it twice weighted one problem double in every rank. Its runs and tables stay on disk; the config no longer selects it and the analysis reads only selected instances. The 17-arm result is on 149; the 14-arm one was on 150 |
 | Mutation probes `uniform_pm50` and `uniform_pm100` added (2026-11-12) | Tests whether SBX's spread does a mutation's job. `run.mutation_overrides` gives an arm its own mutation instead of the full crossover × mutation product. See *Mutation probes* |
+| Mutation probes counted as arms (17 → 19 arms in the analysis, 2026-11-12) | First kept out of the operator comparison, then counted as full arms on request, so that the figures and the tests show them as operators of their own. The falsification tests now run on 19 arms with eleven on the mixing side |
 
 ## Verification
 

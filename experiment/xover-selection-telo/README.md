@@ -5,7 +5,8 @@ evaluation budgets, reference fronts, population dumps of every run, quality ind
 landscape features. It is a [Snakemake](https://snakemake.readthedocs.io) workflow over a small
 Python package (`xover/`) built on [DESDEO](https://github.com/industrial-optimization-group/DESDEO).
 
-The study compares 17 real-coded crossover operators, plus 2 mutation probes, inside 5 algorithms
+The study compares 19 crossover arms (17 real-coded crossover operators, and uniform crossover twice
+more with heavier mutation) inside 5 algorithms
 (NSGA-III, NSGA-II, IBEA, SPEA2, AGE-MOEA-II) on 149 problem instances with 3 to 11 objectives (108
 benchmark instances from DTLZ, WFG, ZCAT and rotated DTLZ, and 41 real-world ones), at 11 seeds per
 configuration: 155 705 runs.
