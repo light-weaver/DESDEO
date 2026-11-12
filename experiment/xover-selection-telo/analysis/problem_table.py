@@ -3,7 +3,8 @@
 One row per base problem: its decision and objective counts, how many instances it contributes, the
 range of its evaluation budgets, and, for the benchmark problems, the property labels the analysis
 splits on (`xover/problem_properties.py`). A property that differs between a row's instances is shown
-as both levels. Citation keys are placeholders for the paper's bibliography.
+as both levels. Citation keys are those of `experiment/xover-selection/paper/references.bib` on the
+experiment/xover-selection-2 branch.
 
     python -m analysis.problem_table
 """
@@ -25,22 +26,22 @@ SUITES = (
 )
 
 ROWS: dict[str, tuple[str, str, str]] = {
-    **{f"dtlz{i}": (f"DTLZ{i}", "deb2005dtlz", "") for i in range(1, 8)},
-    **{f"wfg{i}": (f"WFG{i}", "huband2006wfg", "") for i in range(1, 10)},
-    **{f"zcat{i}": (f"ZCAT{i}", "zapotecas2023zcat", "") for i in (1, 3, 11, 14, 18)},
-    "r2_dtlz2": ("UF11 (R2-DTLZ2-M5)", "zhang2008cec09", ""),
-    "r2_dtlz3": ("UF12 (R2-DTLZ3-M5)", "zhang2008cec09", ""),
-    "re31": ("RE3-1", "tanabe2020re", "Two-bar truss design"),
-    "re32": ("RE3-2", "tanabe2020re", "Welded beam design"),
-    "re33": ("RE3-3", "tanabe2020re", "Disc brake design"),
-    "re34": ("RE3-4", "tanabe2020re", "Vehicle crashworthiness design"),
-    "re41": ("RE4-1", "tanabe2020re", "Car side-impact design"),
-    "re42": ("RE4-2", "tanabe2020re", "Conceptual marine design"),
-    "re61": ("RE6-1", "tanabe2020re", "Water resource planning"),
-    "rocket_injector_design": ("Rocket injector", "vaidyanathan2003rocket", "Original four-objective version"),
-    "river_pollution": ("River pollution", "narula1989river", "Five-objective variant"),
-    "gaa": ("GAA", "simpson1996gaa", "Aircraft family design, constraint as objective"),
-    "metallappl": ("MetallAppl", "saini2023steel", "Microalloyed steel design, surrogates"),
+    **{f"dtlz{i}": (f"DTLZ{i}", "deb2005scalable", "") for i in range(1, 8)},
+    **{f"wfg{i}": (f"WFG{i}", "huband2006review", "") for i in range(1, 10)},
+    **{f"zcat{i}": (f"ZCAT{i}", "zapotecas2023challenging", "") for i in (1, 3, 11, 14, 18)},
+    "r2_dtlz2": ("UF11 (R2-DTLZ2-M5)", "zhang2009multiobjective", ""),
+    "r2_dtlz3": ("UF12 (R2-DTLZ3-M5)", "zhang2009multiobjective", ""),
+    "re31": ("RE3-1", "tanabe2020easy", "Two-bar truss design"),
+    "re32": ("RE3-2", "tanabe2020easy", "Welded beam design"),
+    "re33": ("RE3-3", "tanabe2020easy", "Disc brake design"),
+    "re34": ("RE3-4", "tanabe2020easy", "Vehicle crashworthiness design"),
+    "re41": ("RE4-1", "tanabe2020easy", "Car side-impact design"),
+    "re42": ("RE4-2", "tanabe2020easy", "Conceptual marine design"),
+    "re61": ("RE6-1", "tanabe2020easy", "Water resource planning"),
+    "rocket_injector_design": ("Rocket injector", "vaidyanathan2004computational", "Original four-objective version"),
+    "river_pollution": ("River pollution", "narula1989flexible", "Five-objective variant"),
+    "gaa": ("GAA", "woodruff2013many", "Aircraft family design, constraint as objective"),
+    "metallappl": ("MetallAppl", "saini2023interactive", "Microalloyed steel design, surrogates"),
 }
 """Base problem -> (label, citation key, application). The application replaces the property columns
 on real-world rows, whose properties are unknown."""
