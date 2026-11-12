@@ -36,32 +36,21 @@ def results_dir(config: dict[str, Any]) -> Path:
     return STUDY / config["results"]
 
 
-def probe_arms(config: dict[str, Any]) -> list[str]:
-    """Return the arms that change the mutation as well as the crossover (`run.mutation_overrides`).
-
-    They answer a separate question, so the operator comparison leaves them out: an arm in the table
-    shifts every other arm's min-max regret and every mean rank.
-    """
-    return list(config["run"].get("mutation_overrides", {}))
-
-
-def _scan(config: dict[str, Any], kind: str, *, probes: bool) -> pl.DataFrame:
+def _scan(config: dict[str, Any], kind: str) -> pl.DataFrame:
     # Tables of instances the config no longer selects (re37) stay on disk; leave them out.
     instances = list(design.selected_instances(config))
     frame = pl.scan_parquet(results_dir(config) / kind / "*" / "*.parquet").filter(pl.col("instance").is_in(instances))
-    if not probes:
-        frame = frame.filter(~pl.col("crossover").is_in(probe_arms(config)))
     return frame.collect()
 
 
-def load_indicators(config: dict[str, Any], *, probes: bool = False) -> pl.DataFrame:
-    """Return the indicator table: one row per run and budget fraction, without the probes by default."""
-    return _scan(config, "indicators", probes=probes)
+def load_indicators(config: dict[str, Any]) -> pl.DataFrame:
+    """Return the indicator table: one row per run and budget fraction."""
+    return _scan(config, "indicators")
 
 
-def load_mechanism(config: dict[str, Any], *, probes: bool = False) -> pl.DataFrame:
-    """Return seed-median crossover diagnostics per (instance, algorithm, crossover), without the probes by default."""
-    raw = _scan(config, "mechanism", probes=probes)
+def load_mechanism(config: dict[str, Any]) -> pl.DataFrame:
+    """Return seed-median crossover diagnostics per (instance, algorithm, crossover)."""
+    raw = _scan(config, "mechanism")
     return raw.group_by(["instance", "algorithm", "crossover"]).agg(
         [pl.col(c).fill_nan(None).median() for c in MECHANISM_COLUMNS]
     )

@@ -213,7 +213,7 @@ def rank_grid(tier: dict, crossovers: dict[str, Any]) -> plt.Figure:
     """Mean ranks, one panel per indicator, with each column's top places outlined, one per mixing-side arm.
 
     An outlined cell on a non-mixing arm is a failure of PLAN.md's first falsification test. Ranks are
-    read from the cuts, so the pooled column is ranked over all 750 blocks and the others over 150.
+    read from the cuts, so the pooled column is ranked over all 745 blocks and the others over 149.
     """
     columns = ["all", *(f"algorithm={a}" for a in ALGORITHM_LABEL)]
     labels = ["Pooled", *ALGORITHM_LABEL.values()]

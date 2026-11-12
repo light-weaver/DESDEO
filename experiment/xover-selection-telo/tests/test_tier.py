@@ -3,13 +3,12 @@
 import polars as pl
 import pytest
 
-from analysis.common import probe_arms
 from analysis.tier import (
     MIXING_SIDE,
+    STEP_CONTROL_EXCLUDE,
     budget_consistency,
     cuts,
     falsification,
-    mutation_probes,
     step_control,
     summarise,
     tier,
@@ -26,6 +25,8 @@ EXPECTED = {
     "sbx_pisa": "mixing",
     "bex_uniform": "mixing",
     "uniform": "mixing",
+    "uniform_pm50": "mixing",
+    "uniform_pm100": "mixing",
     "composite": "portfolio",
     "sbx_no_uniform": "non_mixing",
     "bex": "non_mixing",
@@ -39,22 +40,16 @@ EXPECTED = {
 
 
 def test_every_arm_has_the_expected_tier(config):
-    probes = probe_arms(config)
-    assert {arm: tier(options) for arm, options in config["crossovers"].items() if arm not in probes} == EXPECTED
+    assert {arm: tier(config["crossovers"][arm]) for arm in config["run"]["crossovers"]} == EXPECTED
 
 
-def test_the_mutation_probes_stay_out_of_the_operator_comparison(config):
-    assert probe_arms(config) == ["uniform_pm50", "uniform_pm100"]
-    assert not set(probe_arms(config)) & set(EXPECTED)
+def test_the_mixing_side_has_eleven_arms():
+    assert sum(t in MIXING_SIDE for t in EXPECTED.values()) == 11
 
 
-def test_mutation_probes_waits_for_the_probes_to_be_scored():
-    rows = pl.DataFrame({"crossover": ["uniform", "sbx_default"], "fraction": [1.0, 1.0]})
-    assert mutation_probes(rows, "igd_plus") is None
-
-
-def test_the_mixing_side_has_nine_arms():
-    assert sum(t in MIXING_SIDE for t in EXPECTED.values()) == 9
+def test_the_mutation_probes_are_outside_the_step_control(config):
+    # Their offspring step is measured before their mutation, so it would understate how far they move.
+    assert set(config["run"]["mutation_overrides"]) <= set(STEP_CONTROL_EXCLUDE)
 
 
 def test_the_off_arm_is_not_counted_as_mixing_despite_its_uniform_rate(config):
