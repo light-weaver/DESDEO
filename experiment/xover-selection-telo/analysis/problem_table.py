@@ -1,9 +1,9 @@
 """The paper's two tables of test problems, built from the instance registry and the calibrated budgets.
 
-The benchmark table has one row per base problem: its (variables, objectives) pairs, how many
-instances it contributes, the range of its evaluation budgets, and the property labels the analysis
-splits on (`xover/problem_properties.py`). A property that differs between a row's instances lists
-both levels. It is a `sidewaystable*` (package `rotating`).
+The benchmark table stacks one block per suite and gives every instance's budget, with the property
+labels the analysis splits on (`xover/problem_properties.py`). DTLZ and WFG list a (variables,
+objectives, budget) triple per instance. ZCAT and rotated DTLZ, whose instances differ in their
+properties rather than their size, have one budget column per property combination.
 
 The real-world table has one row per instance: the problem, its application, its variables, the exact
 objectives the instance optimises and its budget.
@@ -24,7 +24,7 @@ import polars as pl
 from analysis.common import load_config, results_dir
 from xover import design, problem_properties, problems
 
-BENCHMARK_CAPTION = "Benchmark problems included in the study"
+BENCHMARK_CAPTION = "Benchmark problems included in the study. Budgets are in thousands of function evaluations"
 REAL_WORLD_CAPTION = "Real-world problems included in the study, with the objectives of each instance"
 
 BENCHMARK_SUITES = (
@@ -81,26 +81,21 @@ SYMBOLS = {
 """Objective symbols that need more than `f_k` -> $f_{k}$. MetallAppl's (YS, UTS, ...) print as text."""
 
 
-def budget_range(budgets: list[int]) -> str:
-    """Return the budget range in thousands of evaluations."""
-    low, high = min(budgets) // 1000, max(budgets) // 1000
-    return f"{low}" if low == high else f"{low}--{high}"
+def thousands(evaluations: int) -> str:
+    """Return a budget in thousands of evaluations. Every budget is a multiple of 5 000, so this is exact."""
+    return str(evaluations // 1000)
 
 
-def pairs(instances: list) -> str:
-    """Return the distinct (variables, objectives) pairs, ordered by objectives and then variables."""
-    distinct = sorted({(i.m, i.n_var) for i in instances})
-    return ", ".join(f"({n}, {m})" for m, n in distinct)
+def label_words(instance) -> dict[str, str]:
+    """Return the instance's property labels as the words the table prints."""
+    labels = problem_properties.describe(instance.slug, instance.base, instance.family, instance.m)
+    return {prop: words[labels[prop]] for prop, words in LEVELS.items()}
 
 
-def properties(instances: list) -> list[str]:
-    """Return the four property cells of one benchmark row, both levels where its instances differ."""
-    labels = [problem_properties.describe(i.slug, i.base, i.family, i.m) for i in instances]
-    cells = []
-    for prop, words in LEVELS.items():
-        seen = [words[level] for level in words if any(d[prop] == level for d in labels)]
-        cells.append(", ".join([seen[0], *(word.lower() for word in seen[1:])]))
-    return cells
+def suite_shape(instances: list) -> str:
+    """Return the variables and objectives shared by every instance of a suite, as a title fragment."""
+    (n_var,), (m,) = {i.n_var for i in instances}, {i.m for i in instances}
+    return f"{n_var} variables, {m} objectives"
 
 
 def objectives(instance) -> list[str]:
@@ -130,41 +125,99 @@ def row(cells: list[str]) -> str:
     return " & ".join(cells) + r" \\"
 
 
-def benchmark_table(groups: dict, budgets: dict[str, int]) -> str:
-    """Return the benchmark table: one section per suite, one row per base problem."""
-    header = [
-        "Problem",
-        "(Variables, objectives)",
-        "Instances",
-        "Evaluations (thousands)",
-        "Pareto front",
-        "Separable",
-        "Modality",
-        "Pareto set",
+def zcat_level(level: int) -> str:
+    """Return the separability and modality of a ZCAT level's distance function (Table 4 of the ZCAT paper)."""
+    separable = "Separable" if problem_properties.ZCAT_SEPARABLE[level] else "Non-separable"
+    return f"{separable}, {'multimodal' if problem_properties.ZCAT_MULTIMODAL[level] else 'unimodal'}"
+
+
+def dtlz_wfg_block(members: dict, budgets: dict[str, int]) -> list[str]:
+    """Return the DTLZ and WFG block: fixed properties per problem, a (variables, objectives, budget) per instance."""
+    total = sum(len(instances) for instances in members.values())
+    header = ["Problem", "Pareto front", "Separable", "Modality", "Pareto set", "(Variables, objectives, budget)"]
+    lines = [
+        r"\begin{tabular}{llllll}",
+        r"\toprule",
+        rf"\multicolumn{{6}}{{l}}{{\textit{{{dict(BENCHMARK_SUITES)['dtlz_wfg']}}}, {total} instances}} \\",
+        r"\midrule",
+        row(header),
+        r"\midrule",
     ]
-    lines = [r"\begin{tabular}{llrrllll}", r"\toprule", row(header)]
-    for suite, title in BENCHMARK_SUITES:
+    for base, instances in members.items():
+        words = label_words(instances[0])
+        triples = ", ".join(
+            f"({i.n_var}, {i.m}, {thousands(budgets[i.slug])})" for i in sorted(instances, key=lambda i: (i.m, i.n_var))
+        )
+        lines.append(row([LABELS[base], *words.values(), triples]))
+    return [*lines, r"\bottomrule", r"\end{tabular}"]
+
+
+def zcat_block(members: dict, budgets: dict[str, int]) -> list[str]:
+    """Return the ZCAT block: one budget column per (level, Pareto set), the level's properties in the header.
+
+    The level fixes the separability and modality of the distance function (Table 4 of the ZCAT paper); a
+    linked Pareto set makes the instance non-separable whatever the level, so the header gives the level's
+    own properties and the Pareto set separately.
+    """
+    instances = [i for group in members.values() for i in group]
+    levels = sorted({problem_properties.parse_zcat_slug(i.slug)[1] for i in instances})
+    columns = [(level, linked) for level in levels for linked in (False, True)]
+    title = f"{dict(BENCHMARK_SUITES)['zcat']}, {suite_shape(instances)}, {len(instances)} instances"
+    lines = [
+        rf"\begin{{tabular}}{{ll*{{{len(columns)}}}{{c}}}}",
+        r"\toprule",
+        rf"\multicolumn{{{2 + len(columns)}}}{{l}}{{\textit{{{title}}}}} \\",
+        r"\midrule",
+        row(["", "", *(rf"\multicolumn{{2}}{{c}}{{Level {level}}}" for level in levels)]),
+        row(
+            [
+                "",
+                "",
+                *(rf"\multicolumn{{2}}{{c}}{{{zcat_level(level)}}}" for level in levels),
+            ]
+        ),
+        "".join(rf"\cmidrule(lr){{{3 + 2 * k}-{4 + 2 * k}}}" for k in range(len(levels))),
+        row(["Problem", "Pareto front", *("Linked" if linked else "Product" for _, linked in columns)]),
+        r"\midrule",
+    ]
+    for base, group in members.items():
+        by_column = {problem_properties.parse_zcat_slug(i.slug)[1:]: i for i in group}
+        cells = [thousands(budgets[by_column[column].slug]) for column in columns]
+        lines.append(row([LABELS[base], label_words(group[0])["front"], *cells]))
+    return [*lines, r"\bottomrule", r"\end{tabular}"]
+
+
+def rotated_block(members: dict, budgets: dict[str, int]) -> list[str]:
+    """Return the rotated DTLZ block: the budget of the unrotated control and of the rotated problem."""
+    instances = [i for group in members.values() for i in group]
+    title = f"{dict(BENCHMARK_SUITES)['rotated_dtlz']}, {suite_shape(instances)}, {len(instances)} instances"
+    lines = [
+        r"\begin{tabular}{lllrr}",
+        r"\toprule",
+        rf"\multicolumn{{5}}{{l}}{{\textit{{{title}}}}} \\",
+        r"\midrule",
+        row(["", "", "", "Unrotated control", "Rotated"]),
+        row(["Problem", "Pareto front", "Modality", "Separable, product", "Non-separable, linked"]),
+        r"\midrule",
+    ]
+    for base, group in members.items():
+        by_rotation = {problem_properties.is_rotated(i.slug): i for i in group}
+        words = label_words(group[0])
+        cells = [thousands(budgets[by_rotation[rotated].slug]) for rotated in (False, True)]
+        lines.append(row([LABELS[base], words["front"], words["modality"], *cells]))
+    return [*lines, r"\bottomrule", r"\end{tabular}"]
+
+
+def benchmark_table(groups: dict, budgets: dict[str, int]) -> str:
+    """Return the benchmark table: one block per suite, stacked, each listing every instance's budget."""
+    blocks = {"dtlz_wfg": dtlz_wfg_block, "zcat": zcat_block, "rotated_dtlz": rotated_block}
+    body = []
+    for suite, _ in BENCHMARK_SUITES:
         members = {base: instances for (s, base), instances in groups.items() if s == suite}
-        total = sum(len(instances) for instances in members.values())
-        lines += [r"\midrule", rf"\multicolumn{{8}}{{l}}{{\textit{{{title}}}, {total} instances}} \\"]
-        lines += [
-            row(
-                [
-                    LABELS[base],
-                    pairs(instances),
-                    str(len(instances)),
-                    budget_range([budgets[i.slug] for i in instances]),
-                    *properties(instances),
-                ]
-            )
-            for base, instances in members.items()
-        ]
-    return float_(
-        "sidewaystable*",
-        BENCHMARK_CAPTION,
-        "tab:benchmark-problems",
-        [*lines, r"\bottomrule", r"\end{tabular}"],
-    )
+        if body:
+            body.append(r"\par\bigskip")
+        body += blocks[suite](members, budgets)
+    return float_("table*", BENCHMARK_CAPTION, "tab:benchmark-problems", body)
 
 
 def real_world_table(groups: dict, budgets: dict[str, int]) -> str:
