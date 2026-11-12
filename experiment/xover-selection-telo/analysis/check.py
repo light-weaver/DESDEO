@@ -40,8 +40,9 @@ def check(root: Path, config: dict) -> dict[str, list[str]]:
     fractions = list(config["fractions"])
     front_algorithms = design.front_selection(config, "algorithms")
     front_crossovers = design.front_selection(config, "crossovers")
-    front_runs = len(front_algorithms) * len(front_crossovers) * len(config["reference_front"]["seeds"])
-    expected_rows = len(crossovers) * len(seeds) * len(fractions)
+    front_runs = len(front_algorithms) * len(design.front_pairs(config)) * len(config["reference_front"]["seeds"])
+    runs_per_table = len(design.arm_mutations(config)) * len(seeds)
+    expected_rows = runs_per_table * len(fractions)
 
     failures: dict[str, list[str]] = {
         "front missing": [],
@@ -70,14 +71,15 @@ def check(root: Path, config: dict) -> dict[str, list[str]]:
             if any(path.stat().st_mtime < front.stat().st_mtime for path in paths):
                 failures["table older than its front"].append(name)
             table = pl.read_parquet(paths[0])
-            cells = table.select("crossover", "seed", "fraction").unique()
+            cells = table.select("crossover", "mutation", "seed", "fraction").unique()
             if (
                 table.height != expected_rows
                 or cells.height != expected_rows
                 or set(table["crossover"]) != set(crossovers)
                 or set(table["seed"]) != set(seeds)
                 or not np.allclose(sorted(table["fraction"].unique()), fractions)
-                or pl.read_parquet(paths[1]).height != len(crossovers) * len(seeds)
+                or set(table.select("crossover", "mutation").unique().iter_rows()) != set(design.arm_mutations(config))
+                or pl.read_parquet(paths[1]).height != runs_per_table
             ):
                 failures["table incomplete"].append(f"{name}: {table.height} of {expected_rows} rows")
             values = table.select(RANKABLE).to_numpy()

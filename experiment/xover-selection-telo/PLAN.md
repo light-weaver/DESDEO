@@ -41,9 +41,10 @@ mean rank by at most 0.3, for both `sbx_default` and `sbx_platemo`.
 | Algorithm | 5: NSGA-III, NSGA-II, IBEA, SPEA2, AGE-MOEA-II |
 | Instance | 150: 108 benchmark (64 DTLZ/WFG in four (m, n) blocks, 40 ZCAT, 4 rotated DTLZ) and 42 real-world (RE, rocket injector, river pollution, GAA ladder, MetallAppl) |
 | Seed | 11 (0 to 10) |
+| Mutation probe | 2 arms outside the operator comparison: `uniform_pm50` and `uniform_pm100`, uniform crossover with polynomial mutation at rate 0.5 and 1.0 |
 
 Held fixed:
-- polynomial mutation at rate 1/n and index 20;
+- polynomial mutation at rate 1/n and index 20, except in the two mutation probes;
 - Latin-hypercube initialisation and clip repair;
 - population size by m (Das-Dennis counts, `population_size` in the config);
 - NSGA-III with s-energy planar reference vectors and no adaptation;
@@ -66,7 +67,20 @@ seed.
 NSGA-III with SBX, one of the compared configurations, and the paper says so. Every run is dumped at
 21 budget fractions, so the analysis can be repeated at any shorter budget.
 
-**Reference fronts.** Merged archives of all 5 algorithms × 17 crossovers at seeds 0 and 1, reduced
+**Mutation probes.** Uniform crossover swaps whole variables and changes no value. SBX also moves the
+values of the variables it crosses, half of them in `sbx_default_eta20` and all of them in `sbx_pisa`.
+The probes ask whether that movement is doing a mutation's job, so that the swap is all SBX adds. Each
+runs `uniform` with polynomial mutation (index 20, as SBX's η here) on half or on all of the
+variables, in place of the 1/n mutation, and is compared with the SBX arm that moves the same share:
+`uniform_pm50` with `sbx_default_eta20`, `uniform_pm100` with `sbx_pisa`. A tie in both pairs supports
+the reading. The match is loose in one respect: polynomial mutation scales its step by the variable's
+bounds, while SBX scales it by the distance between the parents, so SBX's step shrinks as the
+population converges and the mutation's does not. A probe that loses to its SBX partner may be losing
+on that alone. The probes change the mutation as well as the crossover, so the operator comparison and
+its falsification tests leave them out (`analysis/common.py` drops them at load) and
+`analysis/tier.py` reports them in a section of their own.
+
+**Reference fronts.** Merged archives of all 5 algorithms × 19 arms (17 crossovers and the 2 probes) at seeds 0 and 1, reduced
 to a uniform subset of 1 500 to 4 000 points by greedy max-min selection. The ideal and nadir come
 from the whole merged pool. Indicators normalise into that box. Hypervolume uses
 `r = 1 + 1/H` (Ishibuchi et al. 2018).
@@ -148,6 +162,7 @@ paper has to name this difference.
 | SPEA2 and AGE-MOEA-II added (3 → 5 algorithms) | Two selection schemes the first three do not cover: strength fitness with nearest-neighbour density, and a survival score from the estimated front geometry |
 | `de_current` added (13 → 14 crossovers) | DESDEO split DE/current/1 out of `DifferentialEvolutionCrossover` (`6b023c55`), which gives a DE variant with no per-variable mixing |
 | `sbx_default_eta20`, `sbx_platemo_eta20` and `sbx_pisa` added (14 → 17 crossovers, 2026-11-07) | One-parameter contrasts for the SBX question. `sbx_platemo_eta20` is PlatEMO's operator at its shipped η = 20. `sbx_default_eta20` against `sbx_default` isolates η, and against `sbx_jmetal` isolates the swap of uncrossed variables. `sbx_pisa` is `sbx_default_eta20` with every variable crossed (`xover_probability` 1.0), so the two isolate the per-variable rate. Its name follows the request; its parameters have not been checked against PISA's code |
+| Mutation probes `uniform_pm50` and `uniform_pm100` added (2026-11-12) | Tests whether SBX's spread does a mutation's job. `run.mutation_overrides` gives an arm its own mutation instead of the full crossover × mutation product. See *Mutation probes* |
 
 ## Verification
 

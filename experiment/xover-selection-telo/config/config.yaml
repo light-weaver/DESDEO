@@ -12,8 +12,13 @@ run:
   instances: all
   algorithms: [nsga3, nsga2, ibea, spea2, agemoea2]
   crossovers: [sbx_default, sbx_default_eta20, sbx_platemo, sbx_platemo_eta20, sbx_jmetal, sbx_pisa,
-               sbx_no_uniform, blend, bex, bex_uniform, uniform, sax, de, de_current, pcx, composite, none]
+               sbx_no_uniform, blend, bex, bex_uniform, uniform, sax, de, de_current, pcx, composite, none,
+               uniform_pm50, uniform_pm100]
   mutations: [polynomial]
+  # Arms that run with this one mutation instead of every mutation under `mutations`. The two probes
+  # are uniform crossover with polynomial mutation on half or all of the variables, to test whether
+  # SBX's spread does what a mutation would.
+  mutation_overrides: {uniform_pm50: polynomial_p50, uniform_pm100: polynomial_p100}
   seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 
 # Budget fractions at which every run's population is dumped: 0.02, then every 5 %.
@@ -129,6 +134,9 @@ crossovers:
   bex_uniform: {name: BoundedExponentialCrossover, xover_probability: 1.0, lambda_: 0.1,
                 uniform_xover_probability: 0.5}
   uniform: {name: UniformCrossover, pair_xover_probability: 1.0, uniform_xover_probability: 0.5}
+  # `uniform` again, run with `run.mutation_overrides`.
+  uniform_pm50: {name: UniformCrossover, pair_xover_probability: 1.0, uniform_xover_probability: 0.5}
+  uniform_pm100: {name: UniformCrossover, pair_xover_probability: 1.0, uniform_xover_probability: 0.5}
   sax: {name: SingleArithmeticCrossover, xover_probability: 1.0}
   # DE/rand/1/bin, the arm of the EMO paper, and DE/current/1, MOEA/D-DE's operator at Li and Zhang's
   # F = 0.5 and CR = 1, where every component comes from the mutant.
@@ -151,6 +159,8 @@ crossovers:
 mutations:
   # mutation_probability: null means 1/n_var.
   polynomial: {name: BoundedPolynomialMutation, mutation_probability: null, distribution_index: 20.0}
+  polynomial_p50: {name: BoundedPolynomialMutation, mutation_probability: 0.5, distribution_index: 20.0}
+  polynomial_p100: {name: BoundedPolynomialMutation, mutation_probability: 1.0, distribution_index: 20.0}
 
 # --------------------------------------------------------------------------------------------------
 # Phase 1: the evaluation budget per instance. The smallest budget at which the median IGD+ of this

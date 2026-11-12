@@ -3,11 +3,13 @@
 import polars as pl
 import pytest
 
+from analysis.common import probe_arms
 from analysis.tier import (
     MIXING_SIDE,
     budget_consistency,
     cuts,
     falsification,
+    mutation_probes,
     step_control,
     summarise,
     tier,
@@ -37,7 +39,18 @@ EXPECTED = {
 
 
 def test_every_arm_has_the_expected_tier(config):
-    assert {arm: tier(options) for arm, options in config["crossovers"].items()} == EXPECTED
+    probes = probe_arms(config)
+    assert {arm: tier(options) for arm, options in config["crossovers"].items() if arm not in probes} == EXPECTED
+
+
+def test_the_mutation_probes_stay_out_of_the_operator_comparison(config):
+    assert probe_arms(config) == ["uniform_pm50", "uniform_pm100"]
+    assert not set(probe_arms(config)) & set(EXPECTED)
+
+
+def test_mutation_probes_waits_for_the_probes_to_be_scored():
+    rows = pl.DataFrame({"crossover": ["uniform", "sbx_default"], "fraction": [1.0, 1.0]})
+    assert mutation_probes(rows, "igd_plus") is None
 
 
 def test_the_mixing_side_has_nine_arms():

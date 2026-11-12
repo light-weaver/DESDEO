@@ -128,7 +128,12 @@ Check the plan first with `uv run --group experiment snakemake -n` from the stud
 the three SBX arms added on 2026-11-07 it should list 2 250 `run_block`, 2 250 `front_runs`, 150
 `reference_front` and 750 `score` jobs, plus the targets that collect them. Many more `run_block`
 jobs means Snakemake has decided to rerun the existing grid; stop and find out why before
-submitting.
+submitting. For the two mutation probes added on 2026-11-12 the counts are 1 500 `run_block`, 1 500
+`front_runs`, 150 `reference_front` and 750 `score`.
+
+An arm that needs a mutation of its own also goes under `run.mutation_overrides`, mapped to a mutation
+defined under `mutations`. It then runs with that one mutation only, and the analysis keeps it out
+of the operator comparison.
 
 ## If the job stops
 

@@ -66,12 +66,13 @@ def _member_mixes(options: dict[str, Any]) -> bool:
 FAMILY_COLOURS = {
     "sbx": ["#08306B", "#08519C", "#2171B5", "#4292C6", "#0E7C9B", "#2AA5C4", "#6BAED6"],
     "bex": ["#54278F", "#807DBA"],
+    "uniform": ["#009E73", "#00593F", "#7FCDBB"],
 }
-"""Ramps for the two families, assigned in config order. Seven SBX arms are more than blues can keep
-apart, so the ramp turns towards cyan; figures that must tell SBX arms apart need another encoding."""
+"""Ramps for the families, assigned in config order, so `uniform` keeps its green and the two mutation
+probes after it take darker and lighter ones. Seven SBX arms are more than blues can keep apart, so the
+ramp turns towards cyan; figures that must tell SBX arms apart need another encoding."""
 
 SOLO_COLOURS = {
-    "uniform": "#009E73",
     "blend": "#D55E00",
     "sax": "#8C564B",
     "de": "#E69F00",
@@ -90,7 +91,8 @@ def family(arm: str, options: dict[str, Any]) -> str:
     """Return which operator family an arm belongs to, for colouring."""
     if arm in SOLO_COLOURS:
         return arm
-    return {"SimulatedBinaryCrossover": "sbx", "BoundedExponentialCrossover": "bex"}.get(options["name"], arm)
+    names = {"SimulatedBinaryCrossover": "sbx", "BoundedExponentialCrossover": "bex", "UniformCrossover": "uniform"}
+    return names.get(options["name"], arm)
 
 
 def colour(arm: str, crossovers: dict[str, dict[str, Any]]) -> str:

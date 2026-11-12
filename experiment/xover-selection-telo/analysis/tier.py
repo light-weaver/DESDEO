@@ -32,6 +32,7 @@ from analysis.common import (
     load_config,
     load_indicators,
     load_mechanism,
+    probe_arms,
     provenance,
     write,
 )
@@ -87,6 +88,17 @@ ABLATIONS: tuple[tuple[str, str, str], ...] = (
     ("uniform", "sbx_default", "the step alone against the step plus SBX's spread"),
 )
 """(A, B, what the contrast isolates): share of blocks where A beats B."""
+
+PROBE_CONTRASTS: tuple[tuple[str, str, str], ...] = (
+    ("uniform_pm50", "sbx_default_eta20", "the swap plus mutation on half the variables against SBX on half"),
+    ("uniform_pm100", "sbx_pisa", "the swap plus mutation on every variable against SBX on every one"),
+    ("uniform_pm50", "uniform", "mutation on half the variables against 1/n, both after the swap"),
+    ("uniform_pm100", "uniform", "mutation on every variable against 1/n, both after the swap"),
+    ("sbx_default_eta20", "uniform", "SBX's spread on half the variables against no spread, both with the swap"),
+)
+"""(A, B, what the contrast isolates) for the mutation probes. Each probe is matched with the SBX arm
+that perturbs the same share of variables at the same distribution index, 20. If SBX's spread acts like
+a mutation, each probe ties its SBX partner. The SBX arms also mutate at 1/n, which the probes replace."""
 
 
 def tier(options: dict[str, Any]) -> str:
@@ -235,6 +247,23 @@ def ablation(frame: pl.DataFrame, better: str, worse: str) -> dict:
     }
 
 
+def mutation_probes(endpoint: pl.DataFrame, indicator: str) -> dict | None:
+    """Return the probes' mean ranks among every arm and their matched contrasts, or None before they are scored.
+
+    `endpoint` is raw indicator rows at the final fraction, probes included. Regret is recomputed over
+    all the arms here, so these ranks are not comparable with the operator comparison's.
+    """
+    present = set(endpoint["crossover"].unique())
+    contrasts = [(a, b, what) for a, b, what in PROBE_CONTRASTS if {a, b} <= present]
+    if not contrasts:
+        return None
+    regret = add_regret(endpoint, indicator).join(endpoint.select("instance", "family").unique(), on="instance")
+    return {
+        "mean_ranks": stats.within_block_ranks(regret, "regret", blocks=stats.CROSSOVER_BLOCKS),
+        "contrasts": {f"{a}_vs_{b}": {"isolates": what, **ablation(regret, a, b)} for a, b, what in contrasts},
+    }
+
+
 def budget(frame: pl.DataFrame, tiers: dict[str, str], fractions: list[float]) -> list[dict]:
     """Return the mixing side's place at every sampled fraction."""
     rows = []
@@ -370,8 +399,10 @@ def main() -> None:
     meta = problem_properties.annotate(table.select(["instance", "base", "family", "m"]).unique())
     fractions = sorted(table["fraction"].unique().to_list())
     final = fractions[-1]
-    tiers = {arm: tier(options) for arm, options in config["crossovers"].items()}
+    probes = probe_arms(config)
+    tiers = {arm: tier(options) for arm, options in config["crossovers"].items() if arm not in probes}
     mechanism = load_mechanism(config)
+    with_probes = load_indicators(config, probes=True).filter(pl.col("fraction") == final) if probes else None
 
     payload: dict = {
         **provenance(),
@@ -391,6 +422,8 @@ def main() -> None:
         "budget_consistency": {},
         "step_control": {},
         "mechanism_by_tier": mechanism_by_tier(mechanism, tiers),
+        "probe_arms": probes,
+        "mutation_probes": {},
     }
 
     for indicator in PARETO_COMPLIANT:
@@ -421,6 +454,8 @@ def main() -> None:
         payload["ablations"][indicator] = {
             f"{a}_vs_{b}": {"isolates": what, **ablation(endpoint, a, b)} for a, b, what in ABLATIONS
         }
+        if with_probes is not None:
+            payload["mutation_probes"][indicator] = mutation_probes(with_probes, indicator)
         payload["budget"][indicator] = budget(regret, tiers, fractions)
         payload["budget_consistency"][indicator] = budget_consistency(regret, fractions)
         payload["step_control"][indicator] = step_control(endpoint, mechanism, tiers)
@@ -466,6 +501,12 @@ def _report(payload: dict) -> None:
         )
         control = payload["step_control"][indicator]
         print(f"  step control R^2: {control['r2_within_block']}")
+        probe = payload["mutation_probes"].get(indicator)
+        if probe:
+            ranks = ", ".join(f"{arm} {rank:.2f}" for arm, rank in probe["mean_ranks"].items())
+            print(f"  with the mutation probes: {ranks}")
+            for pair, entry in probe["contrasts"].items():
+                print(f"  {pair:34s} {entry['overall']:.3f}  by algorithm {entry['by_algorithm']}")
 
 
 if __name__ == "__main__":

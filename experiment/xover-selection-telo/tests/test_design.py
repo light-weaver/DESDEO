@@ -12,7 +12,7 @@ def test_config_is_valid(config):
 
 
 def test_grid_size(config):
-    """150 instances x 5 algorithms x 17 crossovers x 1 mutation, at 11 seeds each."""
+    """150 instances x 5 algorithms x 19 (crossover, mutation) arms, at 11 seeds each."""
     instances = design.selected_instances(config)
     assert len(instances) == 150
     suites = [i.suite for i in instances.values()]
@@ -24,8 +24,30 @@ def test_grid_size(config):
     }
     families = [i.family for i in instances.values()]
     assert {f: families.count(f) for f in set(families)} == {"benchmark": 108, "real_world": 42}
-    assert len(design.run_blocks(config)) * len(config["run"]["seeds"]) == 140_250
-    assert len(design.front_blocks(config)) * len(config["reference_front"]["seeds"]) == 150 * 170
+    assert len(design.run_blocks(config)) * len(config["run"]["seeds"]) == 156_750
+    assert len(design.front_blocks(config)) * len(config["reference_front"]["seeds"]) == 150 * 190
+
+
+def test_each_probe_runs_with_its_own_mutation_only(config):
+    pairs = design.arm_mutations(config)
+    assert len(pairs) == len(config["run"]["crossovers"]) == 19
+    assert ("uniform_pm50", "polynomial_p50") in pairs
+    assert ("uniform_pm100", "polynomial_p100") in pairs
+    assert ("uniform", "polynomial") in pairs
+    assert design.front_pairs(config) == pairs
+    assert design.mutation_options(config, "polynomial_p50").mutation_probability == 0.5
+    assert design.mutation_options(config, "polynomial_p100").mutation_probability == 1.0
+    crossovers = config["crossovers"]
+    assert crossovers["uniform_pm50"] == crossovers["uniform_pm100"] == crossovers["uniform"]
+
+
+def test_a_bad_mutation_override_is_refused(config):
+    broken = copy.deepcopy(config)
+    broken["run"]["mutation_overrides"] = {"uniform_pm50": "missing", "absent": "polynomial"}
+    with pytest.raises(design.ConfigError) as error:
+        design.validate(broken)
+    assert "mutation 'missing', which is not defined" in str(error.value)
+    assert "names 'absent', which run.crossovers does not" in str(error.value)
 
 
 def test_readmitted_instance_is_present(config):

@@ -71,15 +71,26 @@ def instance(config: dict[str, Any], slug: str) -> Instance:
     return all_instances(config)[slug]
 
 
+def mutations_of(config: dict[str, Any], crossover: str, mutations: list[str]) -> list[str]:
+    """The mutations `crossover` runs with: its entry in `run.mutation_overrides`, or else `mutations`."""
+    override = config["run"].get("mutation_overrides", {}).get(crossover)
+    return [override] if override else list(mutations)
+
+
+def arm_mutations(config: dict[str, Any]) -> list[tuple[str, str]]:
+    """Every (crossover, mutation) pair of the main grid, in config order."""
+    run = config["run"]
+    return [(xo, mut) for xo in run["crossovers"] for mut in mutations_of(config, xo, run["mutations"])]
+
+
 def run_blocks(config: dict[str, Any]) -> list[Block]:
     """Every block of the main grid (phase 3)."""
-    run = config["run"]
+    pairs = arm_mutations(config)
     return [
         Block(slug, algorithm, crossover, mutation)
         for slug in selected_instances(config)
-        for algorithm in run["algorithms"]
-        for crossover in run["crossovers"]
-        for mutation in run["mutations"]
+        for algorithm in config["run"]["algorithms"]
+        for crossover, mutation in pairs
     ]
 
 
@@ -89,14 +100,20 @@ def front_selection(config: dict[str, Any], key: str) -> list[str]:
     return list(config["run"][key]) if value == "all" else list(value)
 
 
+def front_pairs(config: dict[str, Any]) -> list[tuple[str, str]]:
+    """Every (crossover, mutation) pair whose archives feed the reference fronts."""
+    mutations = front_selection(config, "mutations")
+    return [(xo, mut) for xo in front_selection(config, "crossovers") for mut in mutations_of(config, xo, mutations)]
+
+
 def front_blocks(config: dict[str, Any]) -> list[Block]:
     """Every block whose archives feed the reference fronts (phase 2)."""
+    pairs = front_pairs(config)
     return [
         Block(slug, algorithm, crossover, mutation)
         for slug in selected_instances(config)
         for algorithm in front_selection(config, "algorithms")
-        for crossover in front_selection(config, "crossovers")
-        for mutation in front_selection(config, "mutations")
+        for crossover, mutation in pairs
     ]
 
 
@@ -283,6 +300,11 @@ def validate(config: dict[str, Any]) -> None:
         if chosen not in config[key]:
             problems.append(f"calibration.{key[:-1]} names {chosen!r}, which is not defined")
     problems += [f"unknown algorithm {name!r}" for name in config["algorithms"] if name not in ALGORITHMS]
+    for crossover, mutation in run.get("mutation_overrides", {}).items():
+        if crossover not in run["crossovers"]:
+            problems.append(f"run.mutation_overrides names {crossover!r}, which run.crossovers does not")
+        if mutation not in config["mutations"]:
+            problems.append(f"run.mutation_overrides gives {crossover!r} mutation {mutation!r}, which is not defined")
 
     for kind, build in (("crossovers", crossover_options), ("mutations", mutation_options)):
         for name in config[kind]:

@@ -41,7 +41,7 @@ fronts.save(
         "n_archived_runs": len(archives),
         "cap": design.subset_cap(config, instance.m),
         "front_runs": {key: design.front_selection(config, key) for key in ("algorithms", "crossovers", "mutations")}
-        | {"seeds": config["reference_front"]["seeds"]},
+        | {"seeds": config["reference_front"]["seeds"], "pairs": design.front_pairs(config)},
     },
 )
 print(f"{slug}: {len(front.points):,} points from {front.pool_size:,} non-dominated, {len(archives)} runs")
