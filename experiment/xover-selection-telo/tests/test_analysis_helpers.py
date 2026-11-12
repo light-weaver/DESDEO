@@ -114,7 +114,7 @@ def test_time_to_target_is_censored_at_the_end_when_the_target_is_never_reached(
 
 @pytest.fixture(scope="module")
 def labelled(config) -> pl.DataFrame:
-    """Return all 150 instances with their labels."""
+    """Return all 149 instances with their labels."""
     frame = pl.DataFrame(
         [
             {"instance": i.slug, "suite": i.suite, "base": i.base, "family": i.family, "m": i.m}
@@ -124,9 +124,9 @@ def labelled(config) -> pl.DataFrame:
     return problem_properties.annotate(frame)
 
 
-def test_every_one_of_the_150_instances_is_labelled(labelled):
-    assert labelled.height == 150
-    assert labelled["instance"].n_unique() == 150
+def test_every_one_of_the_149_instances_is_labelled(labelled):
+    assert labelled.height == 149
+    assert labelled["instance"].n_unique() == 149
     for factor, levels in problem_properties.FACTORS.items():
         assert set(labelled[factor].unique().to_list()) <= set(levels), factor
 
@@ -136,11 +136,11 @@ def test_the_level_counts(labelled):
         factor: {level: labelled.filter(pl.col(factor) == level).height for level in levels}
         for factor, levels in problem_properties.FACTORS.items()
     }
-    assert counts["separable"] == {"yes": 54, "no": 52, "unknown": 44}
-    assert counts["modality"] == {"unimodal": 58, "multimodal": 42, "deceptive": 8, "unknown": 42}
-    assert counts["pareto_set"] == {"product": 78, "linked": 30, "unknown": 42}
-    assert counts["family"] == {"benchmark": 108, "real_world": 42}
-    assert counts["objectives"] == {"3": 96, "4-5": 33, "6-11": 21}
+    assert counts["separable"] == {"yes": 54, "no": 52, "unknown": 43}
+    assert counts["modality"] == {"unimodal": 58, "multimodal": 42, "deceptive": 8, "unknown": 41}
+    assert counts["pareto_set"] == {"product": 78, "linked": 30, "unknown": 41}
+    assert counts["family"] == {"benchmark": 108, "real_world": 41}
+    assert counts["objectives"] == {"3": 95, "4-5": 33, "6-11": 21}
 
 
 def test_the_readmitted_re41_subset_takes_the_real_world_labels(labelled):

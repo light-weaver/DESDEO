@@ -34,7 +34,6 @@ ROWS: dict[str, tuple[str, str, str]] = {
     "re32": ("RE3-2", "tanabe2020re", "Welded beam design"),
     "re33": ("RE3-3", "tanabe2020re", "Disc brake design"),
     "re34": ("RE3-4", "tanabe2020re", "Vehicle crashworthiness design"),
-    "re37": ("RE3-7", "tanabe2020re", "Rocket injector design, three objectives"),
     "re41": ("RE4-1", "tanabe2020re", "Car side-impact design"),
     "re42": ("RE4-2", "tanabe2020re", "Conceptual marine design"),
     "re61": ("RE6-1", "tanabe2020re", "Water resource planning"),

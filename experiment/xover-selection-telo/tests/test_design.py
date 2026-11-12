@@ -12,20 +12,20 @@ def test_config_is_valid(config):
 
 
 def test_grid_size(config):
-    """150 instances x 5 algorithms x 19 (crossover, mutation) arms, at 11 seeds each."""
+    """149 instances x 5 algorithms x 19 (crossover, mutation) arms, at 11 seeds each."""
     instances = design.selected_instances(config)
-    assert len(instances) == 150
+    assert len(instances) == 149
     suites = [i.suite for i in instances.values()]
     assert {s: suites.count(s) for s in set(suites)} == {
         "dtlz_wfg": 64,
         "zcat": 40,
         "rotated_dtlz": 4,
-        "real_world": 42,
+        "real_world": 41,
     }
     families = [i.family for i in instances.values()]
-    assert {f: families.count(f) for f in set(families)} == {"benchmark": 108, "real_world": 42}
-    assert len(design.run_blocks(config)) * len(config["run"]["seeds"]) == 156_750
-    assert len(design.front_blocks(config)) * len(config["reference_front"]["seeds"]) == 150 * 190
+    assert {f: families.count(f) for f in set(families)} == {"benchmark": 108, "real_world": 41}
+    assert len(design.run_blocks(config)) * len(config["run"]["seeds"]) == 155_705
+    assert len(design.front_blocks(config)) * len(config["reference_front"]["seeds"]) == 149 * 190
 
 
 def test_each_probe_runs_with_its_own_mutation_only(config):

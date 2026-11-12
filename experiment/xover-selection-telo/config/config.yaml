@@ -54,7 +54,7 @@ suites:
       re32: {func: re32}
       re33: {func: re33}
       re34: {func: re34}
-      re37: {func: re37}
+      # No re37: it is rocket_injector_design without TW4, which the subset sampler already draws.
       re41: {func: re41}
       re42: {func: re42}
       rocket_injector_design: {func: rocket_injector_design, kwargs: {original_version: true}}

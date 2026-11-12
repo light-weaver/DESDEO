@@ -27,7 +27,7 @@ and swaps none, so it is non-mixing. This was on the 14-arm grid.
 **Result on 17 arms (2026-11-09):** still falsified. The algorithm × indicator tests fail in the same
 9 of 20 cells as on 14 arms, with the IBEA share under the additive epsilon now 0.411. The pooled test
 now fails under IGD+, HV and R2, because `sbx_pisa` falls to 10th or 11th place and `sax` takes the
-ninth. The mixing split's share of the sum of squares stays between 0.68 and 0.75 pooled.
+ninth. The mixing split's share of the sum of squares stays between 0.68 and 0.76 pooled.
 `sbx_pisa` differs from `sbx_default_eta20` only in crossing every variable, and its mean rank is 1.6
 to 2.8 places worse, more than the critical difference of 0.90 under every indicator. The swap alone
 does not make SBX work: crossing about half the variables matters too. η = 20 against 30 moves the
@@ -39,7 +39,7 @@ mean rank by at most 0.3, for both `sbx_default` and `sbx_platemo`.
 |---|---|
 | Crossover | 17: `sbx_default`, `sbx_default_eta20`, `sbx_platemo`, `sbx_platemo_eta20`, `sbx_jmetal`, `sbx_pisa`, `sbx_no_uniform`, `blend`, `bex`, `bex_uniform`, `uniform`, `sax`, `de`, `de_current`, `pcx`, `composite`, `none` |
 | Algorithm | 5: NSGA-III, NSGA-II, IBEA, SPEA2, AGE-MOEA-II |
-| Instance | 150: 108 benchmark (64 DTLZ/WFG in four (m, n) blocks, 40 ZCAT, 4 rotated DTLZ) and 42 real-world (RE, rocket injector, river pollution, GAA ladder, MetallAppl) |
+| Instance | 149: 108 benchmark (64 DTLZ/WFG in four (m, n) blocks, 40 ZCAT, 4 rotated DTLZ) and 41 real-world (RE, rocket injector, river pollution, GAA ladder, MetallAppl) |
 | Seed | 11 (0 to 10) |
 | Mutation probe | 2 arms outside the operator comparison: `uniform_pm50` and `uniform_pm100`, uniform crossover with polynomial mutation at rate 0.5 and 1.0 |
 
@@ -162,6 +162,7 @@ paper has to name this difference.
 | SPEA2 and AGE-MOEA-II added (3 → 5 algorithms) | Two selection schemes the first three do not cover: strength fitness with nearest-neighbour density, and a survival score from the estimated front geometry |
 | `de_current` added (13 → 14 crossovers) | DESDEO split DE/current/1 out of `DifferentialEvolutionCrossover` (`6b023c55`), which gives a DE variant with no per-variable mixing |
 | `sbx_default_eta20`, `sbx_platemo_eta20` and `sbx_pisa` added (14 → 17 crossovers, 2026-11-07) | One-parameter contrasts for the SBX question. `sbx_platemo_eta20` is PlatEMO's operator at its shipped η = 20. `sbx_default_eta20` against `sbx_default` isolates η, and against `sbx_jmetal` isolates the swap of uncrossed variables. `sbx_pisa` is `sbx_default_eta20` with every variable crossed (`xover_probability` 1.0), so the two isolate the per-variable rate. Its name follows the request; its parameters have not been checked against PISA's code |
+| `re37` removed (150 → 149 instances, 2026-11-12) | RE3-7 is the rocket injector problem without TW4. The subset sampler drew the same objective triple from the four-objective rocket injector (`rocket_injector_design_m3_TF_max-TT_max-Xcc_max`): same functions, same bounds. Counting it twice weighted one problem double in every rank. Its runs and tables stay on disk; the config no longer selects it and the analysis reads only selected instances. The 17-arm result is on 149; the 14-arm one was on 150 |
 | Mutation probes `uniform_pm50` and `uniform_pm100` added (2026-11-12) | Tests whether SBX's spread does a mutation's job. `run.mutation_overrides` gives an arm its own mutation instead of the full crossover × mutation product. See *Mutation probes* |
 
 ## Verification
@@ -196,7 +197,7 @@ paper has to name this difference.
   | `run_block` | 10 500 |
   | `front_runs` | 10 500 |
   | `score` | 750 |
-  | `calibrate`, `reference_front`, `sample_landscape`, `mo_features`, `ela_features` | 150 each |
+  | `calibrate`, `reference_front`, `sample_landscape`, `mo_features`, `ela_features` | 149 each |
 
 ### 2026-10-14, before them
 

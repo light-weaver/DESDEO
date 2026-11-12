@@ -5,10 +5,10 @@ evaluation budgets, reference fronts, population dumps of every run, quality ind
 landscape features. It is a [Snakemake](https://snakemake.readthedocs.io) workflow over a small
 Python package (`xover/`) built on [DESDEO](https://github.com/industrial-optimization-group/DESDEO).
 
-The study compares 17 real-coded crossover operators inside 5 algorithms (NSGA-III, NSGA-II, IBEA,
-SPEA2, AGE-MOEA-II) on 150 problem instances with 3 to 11 objectives (108 benchmark instances from
-DTLZ, WFG, ZCAT and rotated DTLZ, and 42 real-world ones), at 11 seeds per configuration: 140 250
-runs.
+The study compares 17 real-coded crossover operators, plus 2 mutation probes, inside 5 algorithms
+(NSGA-III, NSGA-II, IBEA, SPEA2, AGE-MOEA-II) on 149 problem instances with 3 to 11 objectives (108
+benchmark instances from DTLZ, WFG, ZCAT and rotated DTLZ, and 41 real-world ones), at 11 seeds per
+configuration: 155 705 runs.
 
 ## Running it
 
@@ -126,6 +126,6 @@ LEGACY_DIR=/tmp/legacy/experiment/xover-selection uv run pytest tests           
 
 The EMO-paper version of the study ran a 105-instance grid on one 128-core node of CSC's Roihu
 cluster. Its 8 034 front runs took 1.21 h and its 61 776 grid runs took 140 min. This version runs
-150 instances (25 500 front runs, 140 250 grid runs) and adds calibration and landscape features.
+149 instances (28 310 front runs, 155 705 grid runs) and adds calibration and landscape features.
 GAA is the expensive problem, at about 27 times the mean cost per run. [PLAN.md](PLAN.md) has the
 estimate and the measured cost of each algorithm.

@@ -10,6 +10,8 @@ from typing import Any
 import polars as pl
 import yaml
 
+from xover import design
+
 STUDY = Path(__file__).resolve().parents[1]
 
 MECHANISM_COLUMNS = (
@@ -44,7 +46,9 @@ def probe_arms(config: dict[str, Any]) -> list[str]:
 
 
 def _scan(config: dict[str, Any], kind: str, *, probes: bool) -> pl.DataFrame:
-    frame = pl.scan_parquet(results_dir(config) / kind / "*" / "*.parquet")
+    # Tables of instances the config no longer selects (re37) stay on disk; leave them out.
+    instances = list(design.selected_instances(config))
+    frame = pl.scan_parquet(results_dir(config) / kind / "*" / "*.parquet").filter(pl.col("instance").is_in(instances))
     if not probes:
         frame = frame.filter(~pl.col("crossover").is_in(probe_arms(config)))
     return frame.collect()
