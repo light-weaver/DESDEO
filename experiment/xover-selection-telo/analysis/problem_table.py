@@ -192,7 +192,7 @@ def rotated_block(members: dict, budgets: dict[str, int]) -> list[str]:
     instances = [i for group in members.values() for i in group]
     title = f"{dict(BENCHMARK_SUITES)['rotated_dtlz']}, {suite_shape(instances)}, {len(instances)} instances"
     lines = [
-        r"\begin{tabular}{lllrr}",
+        r"\begin{tabular}{lllcc}",
         r"\toprule",
         rf"\multicolumn{{5}}{{l}}{{\textit{{{title}}}}} \\",
         r"\midrule",
